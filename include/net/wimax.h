@@ -195,6 +195,12 @@
  *    defining the `struct nla_policy` for each message, it has to have
  *    an array size of WIMAX_GNL_ATTR_MAX+1.
  *
+ * The op_*() function pointers will not be called if the wimax_dev is
+ * in a state <= %WIMAX_ST_UNINITIALIZED. The exception is:
+ *
+ * - op_reset: can be called at any time after wimax_dev_add() has
+ *   been called.
+ *
  * THE PIPE INTERFACE:
  *
  * This interface is kept intentionally simple. The driver can send
@@ -280,7 +286,7 @@ struct wimax_dev;
  *     does not disconnect the device from the bus and return 0.
  *     If that fails, it should resort to some sort of cold or bus
  *     reset (even if it implies a bus disconnection and device
- *     dissapearance). In that case, -ENODEV should be returned to
+ *     disappearance). In that case, -ENODEV should be returned to
  *     indicate the device is gone.
  *     This operation has to be synchronous, and return only when the
  *     reset is complete. In case of having had to resort to bus/cold

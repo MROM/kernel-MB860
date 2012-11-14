@@ -4,6 +4,9 @@
  * SMP initialization routines for Tegra SoCs
  *
  * Copyright (c) 2009-2010, NVIDIA Corporation.
+ * Copyright (c) 2011 Google, Inc.
+ * Author: Colin Cross <ccross@android.com>
+ *         Gary King <gking@nvidia.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,10 +17,6 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 #include <linux/linkage.h>
@@ -27,19 +26,8 @@
 #include <asm/cache.h>
 
 #include <mach/iomap.h>
-#include <mach/io.h>
 
-#include "power-macros.S"
-
-#define RST_DEVICES_U	0xc
-
-/*        .section ".cpuinit.text", "ax"*/
-
-.macro	poke_ev, val, tmp
-	mov32	\tmp, (TEGRA_EXCEPTION_VECTORS_BASE + 0x100)
-	str	\val, [\tmp]
-.endm
-
+#ifdef CONFIG_SMP
 /*
  *	tegra_secondary_startup
  *
@@ -47,35 +35,88 @@
  *	 secondary_startup routine
  */
 ENTRY(tegra_secondary_startup)
-	msr	cpsr_fsxc, #0xd3
-	bl	__invalidate_cpu_state
-	cpu_id	r0
-	enable_coresite r1
-	poke_ev	r0, r1
+	bl	tegra_invalidate_l1
+	bl	tegra_enable_coresite
 	b	secondary_startup
 ENDPROC(tegra_secondary_startup)
 
+#ifdef CONFIG_PM
 /*
- *	__enable_coresite_access
+ *	tegra_secondary_resume
  *
- *	  Called only on CPU0 to take the CoreSight debug interface out of
- *	  reset. Called with MMU disabled.
+ *	  Secondary CPU boot vector when restarting a CPU following lp2 idle.
  */
-	.align L1_CACHE_SHIFT
-ENTRY(__enable_coresite_access)
-	mov32	r0, (TEGRA_CLK_RESET_BASE + RST_DEVICES_U)
-	mov32	r2, (TEGRA_TMRUS_BASE)
+ENTRY(tegra_secondary_resume)
+	bl	tegra_invalidate_l1
+	bl	tegra_enable_coresite
+	b	cpu_resume
+ENDPROC(tegra_secondary_resume)
+#endif
+#endif
 
-	/* assert reset for 2usec */
+#ifdef CONFIG_PM
+/*
+ *	tegra_resume
+ *
+ *	  CPU boot vector when restarting the master CPU following
+ *	  an LP2 transition. Also branched to by LP0 and LP1 resume after
+ *	  re-enabling sdram.
+ */
+ENTRY(tegra_resume)
+	bl	tegra_invalidate_l1
+	bl	tegra_enable_coresite
+
+	/* enable SCU */
+	ldr	r0, =TEGRA_ARM_PERIF_BASE
 	ldr	r1, [r0]
-	orr	r1, #(1<<9)
+	orr	r1, r1, #1
 	str	r1, [r0]
-	wait_for_us r3, r2, r4
-	add	r3, r3, #2
-	bic	r1, r1, #(1<<9)
-	wait_until r3, r2, r4
-	str	r1, [r0]
-	/* Enable CoreSight */
-	enable_coresite r3
-	bx	lr
-ENDPROC(__enable_coresite_access)
+
+	b	cpu_resume
+ENDPROC(tegra_resume)
+#endif
+
+/*
+ *	tegra_invalidate_l1
+ *
+ *	  Invalidates the L1 data cache (no clean) during initial boot of a cpu
+ *
+ *	  Corrupted registers: r0-r6
+ */
+tegra_invalidate_l1:
+	mov	r0, #0
+	mcr	p15, 2, r0, c0, c0, 0
+	mrc	p15, 1, r0, c0, c0, 0
+
+	movw	r1, #0x7fff
+	and	r2, r1, r0, lsr #13
+
+	movw	r1, #0x3ff
+
+	and	r3, r1, r0, lsr #3	@ NumWays - 1
+	add	r2, r2, #1	@ NumSets
+
+	and	r0, r0, #0x7
+	add	r0, r0, #4	@ SetShift
+
+	clz	r1, r3		@ WayShift
+	add	r4, r3, #1	@ NumWays
+1:	sub	r2, r2, #1	@ NumSets--
+	mov	r3, r4		@ Temp = NumWays
+2:	subs	r3, r3, #1	@ Temp--
+	mov	r5, r3, lsl r1
+	mov	r6, r2, lsl r0
+	orr	r5, r5, r6	@ Reg = (Temp<<WayShift)|(NumSets<<SetShift)
+	mcr	p15, 0, r5, c7, c6, 2
+	bgt	2b
+	cmp	r2, #0
+	bgt	1b
+	dsb
+	isb
+	mov	pc, lr
+
+	/* Enable Coresight access on cpu */
+tegra_enable_coresite:
+	ldr	r0, =0xC5ACCE55
+	mcr	p14, 0, r0, c7, c12, 6
+	mov	pc, lr

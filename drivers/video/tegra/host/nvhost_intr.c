@@ -21,34 +21,15 @@
  */
 
 #include "nvhost_intr.h"
-#include "nvhost_dev.h"
+#include "dev.h"
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/irq.h>
 
-#define intr_to_dev(x) container_of(x, struct nvhost_dev, intr)
+#define intr_to_dev(x) container_of(x, struct nvhost_master, intr)
 
 
-/*** HW host sync management ***/
-
-void init_host_sync(void __iomem *sync_regs)
-{
-	/* disable the ip_busy_timeout. this prevents write drops, etc.
-	 * there's no real way to recover from a hung client anyway.
-	 */
-	writel(0, sync_regs + HOST1X_SYNC_IP_BUSY_TIMEOUT);
-
-	/* increase the auto-ack timout to the maximum value. 2d will hang
-	 * otherwise on ap20.
-	 */
-	writel(0xff, sync_regs + HOST1X_SYNC_CTXSW_TIMEOUT_CFG);
-}
-
-void set_host_clocks_per_microsecond(void __iomem *sync_regs, u32 cpm)
-{
-	/* write microsecond clock register */
-	writel(cpm, sync_regs + HOST1X_SYNC_USEC_CLK);
-}
+/*** HW sync point threshold interrupt management ***/
 
 static void set_syncpt_threshold(void __iomem *sync_regs, u32 id, u32 thresh)
 {
@@ -59,18 +40,6 @@ static void set_syncpt_threshold(void __iomem *sync_regs, u32 id, u32 thresh)
 static void enable_syncpt_interrupt(void __iomem *sync_regs, u32 id)
 {
 	writel(BIT(id),	sync_regs + HOST1X_SYNC_SYNCPT_THRESH_INT_ENABLE_CPU0);
-}
-
-void disable_all_syncpt_interrupts(void __iomem *sync_regs)
-{
-	/* disable interrupts for both cpu's */
-	writel(0, sync_regs + HOST1X_SYNC_SYNCPT_THRESH_INT_DISABLE);
-
-	/* clear status for both cpu's */
-	writel(0xfffffffful, sync_regs +
-		HOST1X_SYNC_SYNCPT_THRESH_CPU0_INT_STATUS);
-	writel(0xfffffffful, sync_regs +
-		HOST1X_SYNC_SYNCPT_THRESH_CPU1_INT_STATUS);
 }
 
 
@@ -99,7 +68,7 @@ static void waiter_release(struct kref *kref)
 	kfree(container_of(kref, struct nvhost_waitlist, refcount));
 }
 
-/**
+/*
  * add a waiter to a waiter queue, sorted by threshold
  * returns true if it was added at the head of the queue
  */
@@ -119,7 +88,7 @@ static bool add_waiter_to_queue(struct nvhost_waitlist *waiter,
 	return true;
 }
 
-/**
+/*
  * run through a waiter queue for a single sync point ID
  * and gather all completed waiters into lists by actions
  */
@@ -156,17 +125,6 @@ static void remove_completed_waiters(struct list_head *head, u32 sync,
 	}
 }
 
-void reset_threshold_interrupt(struct list_head *head,
-		unsigned int id, void __iomem *sync_regs)
-{
-	u32 thresh = list_first_entry(head,
-				struct nvhost_waitlist, list)->thresh;
-
-	set_syncpt_threshold(sync_regs, id, thresh);
-	enable_syncpt_interrupt(sync_regs, id);
-}
-
-
 static void action_submit_complete(struct nvhost_waitlist *waiter)
 {
 	struct nvhost_channel *channel = waiter->data;
@@ -182,6 +140,7 @@ static void action_ctxsave(struct nvhost_waitlist *waiter)
 	struct nvhost_channel *channel = hwctx->channel;
 
 	channel->ctxhandler.save_service(hwctx);
+	channel->ctxhandler.put(hwctx);
 }
 
 static void action_wakeup(struct nvhost_waitlist *waiter)
@@ -219,121 +178,17 @@ static void run_handlers(struct list_head completed[NVHOST_INTR_ACTION_COUNT])
 		list_for_each_entry_safe(waiter, next, head, list) {
 			list_del(&waiter->list);
 			handler(waiter);
-			if (atomic_cmpxchg(&waiter->state, WLS_REMOVED,
-						WLS_HANDLED) != WLS_REMOVED)
-				BUG();
+			WARN_ON(atomic_xchg(&waiter->state, WLS_HANDLED) != WLS_REMOVED);
 			kref_put(&waiter->refcount, waiter_release);
 		}
 	}
 }
 
-/**
- * Remove & handle all waiters that have completed for the given syncpt
- */
-int process_wait_list(struct nvhost_intr_syncpt *syncpt,
-		u32 threshold, void __iomem *sync_regs)
-{
-	struct list_head completed[NVHOST_INTR_ACTION_COUNT];
-	unsigned int i;
-	int empty;
 
-	for (i = 0; i < NVHOST_INTR_ACTION_COUNT; ++i)
-		INIT_LIST_HEAD(completed + i);
-
-	spin_lock(&syncpt->lock);
-
-	remove_completed_waiters(&syncpt->wait_head, threshold, completed);
-
-	empty = list_empty(&syncpt->wait_head);
-	if (!empty)
-		reset_threshold_interrupt(&syncpt->wait_head,
-					syncpt->id, sync_regs);
-
-	spin_unlock(&syncpt->lock);
-
-	run_handlers(completed);
-
-	return empty;
-}
-
-
-/*** host syncpt interrupt service functions ***/
+/*** Interrupt service functions ***/
 
 /**
- * Sync point threshold interrupt service function
- * Handles sync point threshold triggers, in interrupt context
- */
-static irqreturn_t syncpt_thresh_isr(int irq, void *dev_id)
-{
-	struct nvhost_intr_syncpt *syncpt = dev_id;
-	unsigned int id = syncpt->id;
-	struct nvhost_intr *intr = container_of(syncpt, struct nvhost_intr,
-						syncpt[id]);
-	void __iomem *sync_regs = intr_to_dev(intr)->sync_aperture;
-
-	writel(BIT(id),
-		sync_regs + HOST1X_SYNC_SYNCPT_THRESH_INT_DISABLE);
-	writel(BIT(id),
-		sync_regs + HOST1X_SYNC_SYNCPT_THRESH_CPU0_INT_STATUS);
-
-	return IRQ_WAKE_THREAD;
-}
-
-/**
- * Sync point threshold interrupt service thread function
- * Handles sync point threshold triggers, in thread context
- */
-static irqreturn_t syncpt_thresh_fn(int irq, void *dev_id)
-{
-	struct nvhost_intr_syncpt *syncpt = dev_id;
-	unsigned int id = syncpt->id;
-	struct nvhost_intr *intr = container_of(syncpt, struct nvhost_intr,
-						syncpt[id]);
-	struct nvhost_dev *dev = intr_to_dev(intr);
-
-	(void)process_wait_list(syncpt,
-			nvhost_syncpt_update_min(&dev->syncpt, id),
-			dev->sync_aperture);
-
-	return IRQ_HANDLED;
-}
-
-/**
- * lazily request a syncpt's irq
- */
-static int request_syncpt_irq(struct nvhost_intr_syncpt *syncpt)
-{
-	int err;
-
-	if (syncpt->irq_requested)
-		return 0;
-
-	err = request_threaded_irq(syncpt->irq,
-				syncpt_thresh_isr, syncpt_thresh_fn,
-				0, syncpt->thresh_irq_name, syncpt);
-	if (err)
-		return err;
-
-	syncpt->irq_requested = 1;
-	return 0;
-}
-
-/**
- * free a syncpt's irq. syncpt interrupt should be disabled first.
- */
-static void free_syncpt_irq(struct nvhost_intr_syncpt *syncpt)
-{
-	if (syncpt->irq_requested) {
-		free_irq(syncpt->irq, syncpt);
-		syncpt->irq_requested = 0;
-	}
-}
-
-
-/*** host general interrupt service functions ***/
-
-/**
- * Host general interrupt service function
+ * Host1x intterrupt service function
  * Handles read / write failures
  */
 static irqreturn_t host1x_isr(int irq, void *dev_id)
@@ -363,54 +218,86 @@ static irqreturn_t host1x_isr(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int request_host_general_irq(struct nvhost_intr *intr)
+/**
+ * Sync point threshold interrupt service function
+ * Handles sync point threshold triggers, in interrupt context
+ */
+static irqreturn_t syncpt_thresh_isr(int irq, void *dev_id)
 {
+	struct nvhost_intr_syncpt *syncpt = dev_id;
+	unsigned int id = syncpt->id;
+	struct nvhost_intr *intr = container_of(syncpt, struct nvhost_intr,
+						syncpt[id]);
 	void __iomem *sync_regs = intr_to_dev(intr)->sync_aperture;
-	int err;
 
-	if (intr->host_general_irq_requested)
-		return 0;
+	writel(BIT(id),
+		sync_regs + HOST1X_SYNC_SYNCPT_THRESH_INT_DISABLE);
+	writel(BIT(id),
+		sync_regs + HOST1X_SYNC_SYNCPT_THRESH_CPU0_INT_STATUS);
 
-	/* master disable for general (not syncpt) host interrupts */
-	writel(0, sync_regs + HOST1X_SYNC_INTMASK);
-
-	/* clear status & extstatus */
-	writel(0xfffffffful, sync_regs + HOST1X_SYNC_HINTSTATUS_EXT);
-	writel(0xfffffffful, sync_regs + HOST1X_SYNC_HINTSTATUS);
-
-	err = request_irq(intr->host_general_irq, host1x_isr, 0,
-			"host_status", intr);
-	if (err)
-		return err;
-
-	/* enable extra interrupt sources IP_READ_INT and IP_WRITE_INT */
-	writel(BIT(30) | BIT(31), sync_regs + HOST1X_SYNC_HINTMASK_EXT);
-
-	/* enable extra interrupt sources */
-	writel(BIT(31), sync_regs + HOST1X_SYNC_HINTMASK);
-
-	/* enable host module interrupt to CPU0 */
-	writel(BIT(0), sync_regs + HOST1X_SYNC_INTC0MASK);
-
-	/* master enable for general (not syncpt) host interrupts */
-	writel(BIT(0), sync_regs + HOST1X_SYNC_INTMASK);
-
-	intr->host_general_irq_requested = true;
-
-	return err;
+	return IRQ_WAKE_THREAD;
 }
 
-static void free_host_general_irq(struct nvhost_intr *intr)
+
+/**
+ * Sync point threshold interrupt service thread function
+ * Handles sync point threshold triggers, in thread context
+ */
+static irqreturn_t syncpt_thresh_fn(int irq, void *dev_id)
 {
-	if (intr->host_general_irq_requested) {
-		void __iomem *sync_regs = intr_to_dev(intr)->sync_aperture;
+	struct nvhost_intr_syncpt *syncpt = dev_id;
+	unsigned int id = syncpt->id;
+	struct nvhost_intr *intr = container_of(syncpt, struct nvhost_intr,
+						syncpt[id]);
+	struct nvhost_master *dev = intr_to_dev(intr);
+	void __iomem *sync_regs = dev->sync_aperture;
 
-		/* master disable for general (not syncpt) host interrupts */
-		writel(0, sync_regs + HOST1X_SYNC_INTMASK);
+	struct list_head completed[NVHOST_INTR_ACTION_COUNT];
+	u32 sync;
+	unsigned int i;
 
-		free_irq(intr->host_general_irq, intr);
-		intr->host_general_irq_requested = false;
+	for (i = 0; i < NVHOST_INTR_ACTION_COUNT; ++i)
+		INIT_LIST_HEAD(completed + i);
+
+	sync = nvhost_syncpt_update_min(&dev->syncpt, id);
+
+	spin_lock(&syncpt->lock);
+
+	remove_completed_waiters(&syncpt->wait_head, sync, completed);
+
+	if (!list_empty(&syncpt->wait_head)) {
+		u32 thresh = list_first_entry(&syncpt->wait_head,
+					struct nvhost_waitlist, list)->thresh;
+
+		set_syncpt_threshold(sync_regs, id, thresh);
+		enable_syncpt_interrupt(sync_regs, id);
 	}
+
+	spin_unlock(&syncpt->lock);
+
+	run_handlers(completed);
+
+	return IRQ_HANDLED;
+}
+
+/*
+ * lazily request a syncpt's irq
+ */
+static int request_syncpt_irq(struct nvhost_intr_syncpt *syncpt)
+{
+	static DEFINE_MUTEX(mutex);
+	int err;
+
+	mutex_lock(&mutex);
+	if (!syncpt->irq_requested) {
+		err = request_threaded_irq(syncpt->irq,
+					syncpt_thresh_isr, syncpt_thresh_fn,
+					0, syncpt->thresh_irq_name, syncpt);
+		if (!err)
+			syncpt->irq_requested = 1;
+	}
+	mutex_unlock(&mutex);
+	return err;
 }
 
 
@@ -450,10 +337,7 @@ int nvhost_intr_add_action(struct nvhost_intr *intr, u32 id, u32 thresh,
 	if (!syncpt->irq_requested) {
 		spin_unlock(&syncpt->lock);
 
-		mutex_lock(&intr->mutex);
 		err = request_syncpt_irq(syncpt);
-		mutex_unlock(&intr->mutex);
-
 		if (err) {
 			kfree(waiter);
 			return err;
@@ -498,10 +382,13 @@ int nvhost_intr_init(struct nvhost_intr *intr, u32 irq_gen, u32 irq_sync)
 {
 	unsigned int id;
 	struct nvhost_intr_syncpt *syncpt;
+	int err;
 
-	mutex_init(&intr->mutex);
-	intr->host_general_irq = irq_gen;
-	intr->host_general_irq_requested = false;
+	err = request_irq(irq_gen, host1x_isr, 0, "host_status", intr);
+	if (err)
+		goto fail;
+	intr->host1x_irq = irq_gen;
+	intr->host1x_isr_started = true;
 
 	for (id = 0, syncpt = intr->syncpt;
 	     id < NV_HOST1X_SYNCPT_NB_PTS;
@@ -512,42 +399,21 @@ int nvhost_intr_init(struct nvhost_intr *intr, u32 irq_gen, u32 irq_sync)
 		spin_lock_init(&syncpt->lock);
 		INIT_LIST_HEAD(&syncpt->wait_head);
 		snprintf(syncpt->thresh_irq_name,
-			sizeof(syncpt->thresh_irq_name),
-			"host_sp_%02d", id);
+			 sizeof(syncpt->thresh_irq_name),
+			 "%s", nvhost_syncpt_name(id));
 	}
 
 	return 0;
+
+fail:
+	nvhost_intr_deinit(intr);
+	return err;
 }
 
 void nvhost_intr_deinit(struct nvhost_intr *intr)
 {
-	nvhost_intr_stop(intr);
-}
-
-void nvhost_intr_start(struct nvhost_intr *intr, u32 hz)
-{
-	struct nvhost_dev *dev = intr_to_dev(intr);
-	void __iomem *sync_regs = dev->sync_aperture;
-
-	mutex_lock(&intr->mutex);
-
-	init_host_sync(sync_regs);
-	set_host_clocks_per_microsecond(sync_regs, (hz + 1000000 - 1)/1000000);
-
-	request_host_general_irq(intr);
-
-	mutex_unlock(&intr->mutex);
-}
-
-void nvhost_intr_stop(struct nvhost_intr *intr)
-{
-	void __iomem *sync_regs = intr_to_dev(intr)->sync_aperture;
 	unsigned int id;
 	struct nvhost_intr_syncpt *syncpt;
-
-	mutex_lock(&intr->mutex);
-
-	disable_all_syncpt_interrupts(sync_regs);
 
 	for (id = 0, syncpt = intr->syncpt;
 	     id < NV_HOST1X_SYNCPT_NB_PTS;
@@ -566,10 +432,46 @@ void nvhost_intr_stop(struct nvhost_intr *intr)
 			BUG_ON(1);
 		}
 
-		free_syncpt_irq(syncpt);
+		if (syncpt->irq_requested)
+			free_irq(syncpt->irq, syncpt);
 	}
 
-	free_host_general_irq(intr);
+	if (intr->host1x_isr_started) {
+		free_irq(intr->host1x_irq, intr);
+		intr->host1x_isr_started = false;
+	}
+}
 
-	mutex_unlock(&intr->mutex);
+void nvhost_intr_configure (struct nvhost_intr *intr, u32 hz)
+{
+	void __iomem *sync_regs = intr_to_dev(intr)->sync_aperture;
+
+	// write microsecond clock register
+	writel((hz + 1000000 - 1)/1000000, sync_regs + HOST1X_SYNC_USEC_CLK);
+
+	/* disable the ip_busy_timeout. this prevents write drops, etc.
+	 * there's no real way to recover from a hung client anyway.
+	 */
+	writel(0, sync_regs + HOST1X_SYNC_IP_BUSY_TIMEOUT);
+
+	/* increase the auto-ack timout to the maximum value. 2d will hang
+	 * otherwise on ap20.
+	 */
+	writel(0xff, sync_regs + HOST1X_SYNC_CTXSW_TIMEOUT_CFG);
+
+	/* disable interrupts for both cpu's */
+	writel(0, sync_regs + HOST1X_SYNC_SYNCPT_THRESH_INT_MASK_0);
+	writel(0, sync_regs + HOST1X_SYNC_SYNCPT_THRESH_INT_MASK_1);
+
+	/* masking all of the interrupts actually means "enable" */
+	writel(BIT(0), sync_regs + HOST1X_SYNC_INTMASK);
+
+	/* enable HOST_INT_C0MASK */
+	writel(BIT(0), sync_regs + HOST1X_SYNC_INTC0MASK);
+
+	/* enable HINTMASK_EXT */
+	writel(BIT(31), sync_regs + HOST1X_SYNC_HINTMASK);
+
+	/* enable IP_READ_INT and IP_WRITE_INT */
+	writel(BIT(30) | BIT(31), sync_regs + HOST1X_SYNC_HINTMASK_EXT);
 }

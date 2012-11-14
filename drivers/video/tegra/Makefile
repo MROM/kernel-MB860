@@ -1,3 +1,4 @@
-obj-$(CONFIG_FB_TEGRA_GRHOST) += host/
-obj-$(CONFIG_FB_TEGRA_DUMMY) += tegra-fb.o
-obj-$(CONFIG_DEVNVMAP)		+= nvmap.o
+obj-$(CONFIG_TEGRA_GRHOST) += host/
+obj-$(CONFIG_TEGRA_DC) += dc/
+obj-$(CONFIG_FB_TEGRA) += fb.o
+obj-$(CONFIG_TEGRA_NVMAP) += nvmap/

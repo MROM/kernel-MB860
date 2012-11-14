@@ -19,16 +19,14 @@
 
 #include <linux/linkage.h>
 #include <asm/assembler.h>
-#include <asm/cache.h>
 #include <mach/iomap.h>
 #include <mach/io.h>
-#include "power-macros.S"
 
     .text
 
 ENTRY(__udelay)
 ENTRY(__const_udelay)
-    mov32 r3, (IO_PPSB_VIRT + TEGRA_TMRUS_BASE - IO_PPSB_PHYS)
+    ldr r3, =(IO_PPSB_VIRT + TEGRA_TMRUS_BASE - IO_PPSB_PHYS)
     ldr r1, [r3]
 
 /* r0 - usecs to wait
@@ -45,7 +43,6 @@ ENDPROC(__udelay)
 
 
 @ Delay routine
-    .align L1_CACHE_SHIFT
 ENTRY(__delay)
     subs  r0, r0, #1
     bhi __delay

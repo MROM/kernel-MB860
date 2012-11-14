@@ -25,15 +25,6 @@
 #define QMIWDS 1
 #define QMIDMS 2
 
-#define true      1
-#define false     0
-
-#define ENOMEM    12
-#define EFAULT    14
-#define EINVAL    22
-#define ENOMSG    42
-#define ENODATA   61
-
 int qmux_parse(u16 *cid, void *buf, size_t size);
 int qmux_fill(u16 cid, void *buf, size_t size);
 

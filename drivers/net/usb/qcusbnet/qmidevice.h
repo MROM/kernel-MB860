@@ -22,7 +22,6 @@
 #include "structs.h"
 #include "qmi.h"
 
-void printhex(const void *data, size_t size);
 void qc_setdown(struct qcusbnet *dev, u8 reason);
 void qc_cleardown(struct qcusbnet *dev, u8 reason);
 bool qc_isdown(struct qcusbnet *dev, u8 reason);

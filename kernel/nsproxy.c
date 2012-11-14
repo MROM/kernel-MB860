@@ -13,6 +13,7 @@
  *             Pavel Emelianov <xemul@openvz.org>
  */
 
+#include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/nsproxy.h>
 #include <linux/init_task.h>
@@ -24,7 +25,18 @@
 
 static struct kmem_cache *nsproxy_cachep;
 
-struct nsproxy init_nsproxy = INIT_NSPROXY(init_nsproxy);
+struct nsproxy init_nsproxy = {
+	.count	= ATOMIC_INIT(1),
+	.uts_ns	= &init_uts_ns,
+#if defined(CONFIG_POSIX_MQUEUE) || defined(CONFIG_SYSVIPC)
+	.ipc_ns	= &init_ipc_ns,
+#endif
+	.mnt_ns	= NULL,
+	.pid_ns	= &init_pid_ns,
+#ifdef CONFIG_NET
+	.net_ns	= &init_net,
+#endif
+};
 
 static inline struct nsproxy *create_nsproxy(void)
 {
@@ -57,13 +69,13 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 		goto out_ns;
 	}
 
-	new_nsp->uts_ns = copy_utsname(flags, tsk->nsproxy->uts_ns);
+	new_nsp->uts_ns = copy_utsname(flags, tsk);
 	if (IS_ERR(new_nsp->uts_ns)) {
 		err = PTR_ERR(new_nsp->uts_ns);
 		goto out_uts;
 	}
 
-	new_nsp->ipc_ns = copy_ipcs(flags, tsk->nsproxy->ipc_ns);
+	new_nsp->ipc_ns = copy_ipcs(flags, tsk);
 	if (IS_ERR(new_nsp->ipc_ns)) {
 		err = PTR_ERR(new_nsp->ipc_ns);
 		goto out_ipc;

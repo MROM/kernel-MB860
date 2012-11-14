@@ -24,6 +24,7 @@
 #include <linux/bootmem.h>
 #include <linux/pagemap.h>
 #include <linux/poison.h>
+#include <linux/gfp.h>
 
 #include <asm/sections.h>
 #include <asm/system.h>
@@ -74,7 +75,7 @@ void __init kmap_init(void)
 	kmap_prot = __pgprot(SRMMU_ET_PTE | SRMMU_PRIV | SRMMU_CACHE);
 }
 
-void show_mem(void)
+void show_mem(unsigned int filter)
 {
 	printk("Mem-info:\n");
 	show_free_areas();

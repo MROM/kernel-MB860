@@ -5,7 +5,7 @@
  *
  * SGI UV architectural definitions
  *
- * Copyright (C) 2007-2008 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 2007-2010 Silicon Graphics, Inc. All rights reserved.
  */
 
 #ifndef _ASM_X86_UV_UV_HUB_H
@@ -77,7 +77,8 @@
  *
  *		1111110000000000
  *		5432109876543210
- *		pppppppppplc0cch
+ *		pppppppppplc0cch	Nehalem-EX
+ *		ppppppppplcc0cch	Westmere-EX
  *		sssssssssss
  *
  *			p  = pnode bits
@@ -148,11 +149,24 @@ struct uv_hub_info_s {
 	unsigned char		m_val;
 	unsigned char		n_val;
 	struct uv_scir_s	scir;
+	unsigned char		apic_pnode_shift;
 };
 
 DECLARE_PER_CPU(struct uv_hub_info_s, __uv_hub_info);
 #define uv_hub_info		(&__get_cpu_var(__uv_hub_info))
 #define uv_cpu_hub_info(cpu)	(&per_cpu(__uv_hub_info, cpu))
+
+union uvh_apicid {
+    unsigned long       v;
+    struct uvh_apicid_s {
+        unsigned long   local_apic_mask  : 24;
+        unsigned long   local_apic_shift :  5;
+        unsigned long   unused1          :  3;
+        unsigned long   pnode_mask       : 24;
+        unsigned long   pnode_shift      :  5;
+        unsigned long   unused2          :  3;
+    } s;
+};
 
 /*
  * Local & Global MMR space macros.
@@ -172,6 +186,8 @@ DECLARE_PER_CPU(struct uv_hub_info_s, __uv_hub_info);
 #define UV_LOCAL_MMR_SIZE		(64UL * 1024 * 1024)
 #define UV_GLOBAL_MMR32_SIZE		(64UL * 1024 * 1024)
 
+#define UV_GLOBAL_GRU_MMR_BASE		0x4000000
+
 #define UV_GLOBAL_MMR32_PNODE_SHIFT	15
 #define UV_GLOBAL_MMR64_PNODE_SHIFT	26
 
@@ -180,7 +196,10 @@ DECLARE_PER_CPU(struct uv_hub_info_s, __uv_hub_info);
 #define UV_GLOBAL_MMR64_PNODE_BITS(p)					\
 	(((unsigned long)(p)) << UV_GLOBAL_MMR64_PNODE_SHIFT)
 
+#define UVH_APICID		0x002D0E00L
 #define UV_APIC_PNODE_SHIFT	6
+
+#define UV_APICID_HIBIT_MASK	0xffff0000
 
 /* Local Bus from cpu's perspective */
 #define LOCAL_BUS_BASE		0x1c00000
@@ -232,6 +251,26 @@ static inline unsigned long uv_gpa(void *v)
 	return uv_soc_phys_ram_to_gpa(__pa(v));
 }
 
+/* Top two bits indicate the requested address is in MMR space.  */
+static inline int
+uv_gpa_in_mmr_space(unsigned long gpa)
+{
+	return (gpa >> 62) == 0x3UL;
+}
+
+/* UV global physical address --> socket phys RAM */
+static inline unsigned long uv_gpa_to_soc_phys_ram(unsigned long gpa)
+{
+	unsigned long paddr = gpa & uv_hub_info->gpa_mask;
+	unsigned long remap_base = uv_hub_info->lowmem_remap_base;
+	unsigned long remap_top =  uv_hub_info->lowmem_remap_top;
+
+	if (paddr >= remap_base && paddr < remap_base + remap_top)
+		paddr -= remap_base;
+	return paddr;
+}
+
+
 /* gnode -> pnode */
 static inline unsigned long uv_gpa_to_gnode(unsigned long gpa)
 {
@@ -258,7 +297,7 @@ static inline void *uv_pnode_offset_to_vaddr(int pnode, unsigned long offset)
  */
 static inline int uv_apicid_to_pnode(int apicid)
 {
-	return (apicid >> UV_APIC_PNODE_SHIFT);
+	return (apicid >> uv_hub_info->apic_pnode_shift);
 }
 
 /*
@@ -285,7 +324,7 @@ static inline unsigned long uv_read_global_mmr32(int pnode, unsigned long offset
  * Access Global MMR space using the MMR space located at the top of physical
  * memory.
  */
-static inline unsigned long *uv_global_mmr64_address(int pnode, unsigned long offset)
+static inline volatile void __iomem *uv_global_mmr64_address(int pnode, unsigned long offset)
 {
 	return __va(UV_GLOBAL_MMR64_BASE |
 		    UV_GLOBAL_MMR64_PNODE_BITS(pnode) | offset);
@@ -299,6 +338,16 @@ static inline void uv_write_global_mmr64(int pnode, unsigned long offset, unsign
 static inline unsigned long uv_read_global_mmr64(int pnode, unsigned long offset)
 {
 	return readq(uv_global_mmr64_address(pnode, offset));
+}
+
+/*
+ * Global MMR space addresses when referenced by the GRU. (GRU does
+ * NOT use socket addressing).
+ */
+static inline unsigned long uv_global_gru_mmr_address(int pnode, unsigned long offset)
+{
+	return UV_GLOBAL_GRU_MMR_BASE | offset |
+		((unsigned long)pnode << uv_hub_info->m_val);
 }
 
 static inline void uv_write_global_mmr8(int pnode, unsigned long offset, unsigned char val)
@@ -349,6 +398,8 @@ struct uv_blade_info {
 	unsigned short	nr_online_cpus;
 	unsigned short	pnode;
 	short		memory_nid;
+	spinlock_t	nmi_lock;
+	unsigned long	nmi_count;
 };
 extern struct uv_blade_info *uv_blade_info;
 extern short *uv_node_to_blade;
@@ -444,6 +495,16 @@ static inline void uv_set_cpu_scir_bits(int cpu, unsigned char value)
 	}
 }
 
+extern unsigned int uv_apicid_hibits;
+static unsigned long uv_hub_ipi_value(int apicid, int vector, int mode)
+{
+	apicid |= uv_apicid_hibits;
+	return (1UL << UVH_IPI_INT_SEND_SHFT) |
+			((apicid) << UVH_IPI_INT_APIC_ID_SHFT) |
+			(mode << UVH_IPI_INT_DELIVERY_MODE_SHFT) |
+			(vector << UVH_IPI_INT_VECTOR_SHFT);
+}
+
 static inline void uv_hub_send_ipi(int pnode, int apicid, int vector)
 {
 	unsigned long val;
@@ -452,11 +513,20 @@ static inline void uv_hub_send_ipi(int pnode, int apicid, int vector)
 	if (vector == NMI_VECTOR)
 		dmode = dest_NMI;
 
-	val = (1UL << UVH_IPI_INT_SEND_SHFT) |
-			((apicid) << UVH_IPI_INT_APIC_ID_SHFT) |
-			(dmode << UVH_IPI_INT_DELIVERY_MODE_SHFT) |
-			(vector << UVH_IPI_INT_VECTOR_SHFT);
+	val = uv_hub_ipi_value(apicid, vector, dmode);
 	uv_write_global_mmr64(pnode, UVH_IPI_INT, val);
+}
+
+/*
+ * Get the minimum revision number of the hub chips within the partition.
+ *     1 - initial rev 1.0 silicon
+ *     2 - rev 2.0 production silicon
+ */
+static inline int uv_get_min_hub_revision_id(void)
+{
+	extern int uv_min_hub_revision_id;
+
+	return uv_min_hub_revision_id;
 }
 
 #endif /* CONFIG_X86_64 */

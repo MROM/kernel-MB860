@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/types.h>
+#include <linux/slab.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
 #include <linux/kernel.h>
@@ -98,8 +99,9 @@ static void ts27010_tty_close(struct tty_struct *tty, struct file *filp)
 {
 	struct ts27010_tty_data *td = tty->driver->driver_state;
 
+	ts27010_mux_line_close(tty->index);
+
 	if (atomic_dec_and_test(&td->chan[tty->index].ref_count)) {
-		ts27010_mux_line_close(tty->index);
 
 		td->chan[tty->index].tty = NULL;
 
@@ -148,8 +150,8 @@ static void ts27010_tty_unthrottle(struct tty_struct *tty)
 		tty->index);
 }
 
-static int ts27010_tty_ioctl(struct tty_struct *tty, struct file *file,
-		     unsigned int cmd, unsigned long arg)
+static int ts27010_tty_ioctl(struct tty_struct *tty, unsigned int cmd,
+	unsigned long arg)
 {
 	int line;
 

@@ -7,45 +7,44 @@ config XZ_DEC
 	  CRC32 is supported. See Documentation/xz.txt for more information.
 
 config XZ_DEC_X86
-	bool "x86 BCJ filter decoder" if EMBEDDED
-	default n
+	bool "x86 BCJ filter decoder" if EXPERT
+	default y
 	depends on XZ_DEC
 	select XZ_DEC_BCJ
 
 config XZ_DEC_POWERPC
-	bool "PowerPC BCJ filter decoder" if EMBEDDED
-	default n
+	bool "PowerPC BCJ filter decoder" if EXPERT
+	default y
 	depends on XZ_DEC
 	select XZ_DEC_BCJ
 
 config XZ_DEC_IA64
-	bool "IA-64 BCJ filter decoder" if EMBEDDED
-	default n
+	bool "IA-64 BCJ filter decoder" if EXPERT
+	default y
 	depends on XZ_DEC
 	select XZ_DEC_BCJ
 
 config XZ_DEC_ARM
-	bool "ARM BCJ filter decoder" if EMBEDDED && ARM
+	bool "ARM BCJ filter decoder" if EXPERT
 	default y
-	depends on XZ_DEC && !ARM_THUMB
+	depends on XZ_DEC
 	select XZ_DEC_BCJ
 
 config XZ_DEC_ARMTHUMB
-	bool "ARM-Thumb BCJ filter decoder" if EMBEDDED && ARM
+	bool "ARM-Thumb BCJ filter decoder" if EXPERT
 	default y
-	depends on XZ_DEC && ARM_THUMB
+	depends on XZ_DEC
 	select XZ_DEC_BCJ
 
 config XZ_DEC_SPARC
-	bool "SPARC BCJ filter decoder" if EMBEDDED
-	default n
+	bool "SPARC BCJ filter decoder" if EXPERT
+	default y
 	depends on XZ_DEC
 	select XZ_DEC_BCJ
 
 config XZ_DEC_BCJ
 	bool
-	help
-	  Branch/Call/Jump (BCJ) filter decoders
+	default n
 
 config XZ_DEC_TEST
 	tristate "XZ decompressor tester"

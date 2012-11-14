@@ -50,12 +50,15 @@
  * be incorporated into the next SCTP release.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/net.h>
 #include <linux/inet.h>
+#include <linux/slab.h>
 #include <net/sock.h>
 #include <net/inet_ecn.h>
 #include <linux/skbuff.h>
@@ -548,7 +551,7 @@ sctp_disposition_t sctp_sf_do_5_1C_ack(const struct sctp_endpoint *ep,
 		 *
 		 * This means that if we only want to abort associations
 		 * in an authenticated way (i.e AUTH+ABORT), then we
-		 * can't destroy this association just becuase the packet
+		 * can't destroy this association just because the packet
 		 * was malformed.
 		 */
 		if (sctp_auth_recv_cid(SCTP_CID_ABORT, asoc))
@@ -996,14 +999,15 @@ sctp_disposition_t sctp_sf_sendbeat_8_3(const struct sctp_endpoint *ep,
 				sctp_sf_heartbeat(ep, asoc, type, arg,
 						  commands))
 			return SCTP_DISPOSITION_NOMEM;
+
 		/* Set transport error counter and association error counter
 		 * when sending heartbeat.
 		 */
-		sctp_add_cmd_sf(commands, SCTP_CMD_TRANSPORT_IDLE,
-				SCTP_TRANSPORT(transport));
 		sctp_add_cmd_sf(commands, SCTP_CMD_TRANSPORT_HB_SENT,
 				SCTP_TRANSPORT(transport));
 	}
+	sctp_add_cmd_sf(commands, SCTP_CMD_TRANSPORT_IDLE,
+			SCTP_TRANSPORT(transport));
 	sctp_add_cmd_sf(commands, SCTP_CMD_HB_TIMER_UPDATE,
 			SCTP_TRANSPORT(transport));
 
@@ -1136,18 +1140,16 @@ sctp_disposition_t sctp_sf_backbeat_8_3(const struct sctp_endpoint *ep,
 	if (unlikely(!link)) {
 		if (from_addr.sa.sa_family == AF_INET6) {
 			if (net_ratelimit())
-				printk(KERN_WARNING
-				    "%s association %p could not find address %pI6\n",
-				    __func__,
-				    asoc,
-				    &from_addr.v6.sin6_addr);
+				pr_warn("%s association %p could not find address %pI6\n",
+					__func__,
+					asoc,
+					&from_addr.v6.sin6_addr);
 		} else {
 			if (net_ratelimit())
-				printk(KERN_WARNING
-				    "%s association %p could not find address %pI4\n",
-				    __func__,
-				    asoc,
-				    &from_addr.v4.sin_addr.s_addr);
+				pr_warn("%s association %p could not find address %pI4\n",
+					__func__,
+					asoc,
+					&from_addr.v4.sin_addr.s_addr);
 		}
 		return SCTP_DISPOSITION_DISCARD;
 	}
@@ -1230,6 +1232,18 @@ out:
 	return 0;
 }
 
+static bool list_has_sctp_addr(const struct list_head *list,
+			       union sctp_addr *ipaddr)
+{
+	struct sctp_transport *addr;
+
+	list_for_each_entry(addr, list, transports) {
+		if (sctp_cmp_addr_exact(ipaddr, &addr->ipaddr))
+			return true;
+	}
+
+	return false;
+}
 /* A restart is occurring, check to make sure no new addresses
  * are being added as we may be under a takeover attack.
  */
@@ -1238,10 +1252,10 @@ static int sctp_sf_check_restart_addrs(const struct sctp_association *new_asoc,
 				       struct sctp_chunk *init,
 				       sctp_cmd_seq_t *commands)
 {
-	struct sctp_transport *new_addr, *addr;
-	int found;
+	struct sctp_transport *new_addr;
+	int ret = 1;
 
-	/* Implementor's Guide - Sectin 5.2.2
+	/* Implementor's Guide - Section 5.2.2
 	 * ...
 	 * Before responding the endpoint MUST check to see if the
 	 * unexpected INIT adds new addresses to the association. If new
@@ -1252,31 +1266,19 @@ static int sctp_sf_check_restart_addrs(const struct sctp_association *new_asoc,
 	/* Search through all current addresses and make sure
 	 * we aren't adding any new ones.
 	 */
-	new_addr = NULL;
-	found = 0;
-
 	list_for_each_entry(new_addr, &new_asoc->peer.transport_addr_list,
-			transports) {
-		found = 0;
-		list_for_each_entry(addr, &asoc->peer.transport_addr_list,
-				transports) {
-			if (sctp_cmp_addr_exact(&new_addr->ipaddr,
-						&addr->ipaddr)) {
-				found = 1;
-				break;
-			}
-		}
-		if (!found)
+			    transports) {
+		if (!list_has_sctp_addr(&asoc->peer.transport_addr_list,
+					&new_addr->ipaddr)) {
+			sctp_sf_send_restart_abort(&new_addr->ipaddr, init,
+						   commands);
+			ret = 0;
 			break;
-	}
-
-	/* If a new address was added, ABORT the sender. */
-	if (!found && new_addr) {
-		sctp_sf_send_restart_abort(&new_addr->ipaddr, init, commands);
+		}
 	}
 
 	/* Return success if all addresses were found. */
-	return found;
+	return ret;
 }
 
 /* Populate the verification/tie tags based on overlapping INIT
@@ -1544,7 +1546,7 @@ cleanup:
 }
 
 /*
- * Handle simultanous INIT.
+ * Handle simultaneous INIT.
  * This means we started an INIT and then we got an INIT request from
  * our peer.
  *
@@ -1720,7 +1722,7 @@ static sctp_disposition_t sctp_sf_do_dupcook_a(const struct sctp_endpoint *ep,
 
 		err = sctp_make_op_error(asoc, chunk,
 					 SCTP_ERROR_COOKIE_IN_SHUTDOWN,
-					 NULL, 0);
+					 NULL, 0, 0);
 		if (err)
 			sctp_add_cmd_sf(commands, SCTP_CMD_REPLY,
 					SCTP_CHUNK(err));
@@ -2077,7 +2079,7 @@ sctp_disposition_t sctp_sf_shutdown_pending_abort(
 	 * RFC 2960, Section 3.3.7
 	 *    If an endpoint receives an ABORT with a format error or for an
 	 *    association that doesn't exist, it MUST silently discard it.
-	 * Becasue the length is "invalid", we can't really discard just
+	 * Because the length is "invalid", we can't really discard just
 	 * as we do not know its true length.  So, to be safe, discard the
 	 * packet.
 	 */
@@ -2118,7 +2120,7 @@ sctp_disposition_t sctp_sf_shutdown_sent_abort(const struct sctp_endpoint *ep,
 	 * RFC 2960, Section 3.3.7
 	 *    If an endpoint receives an ABORT with a format error or for an
 	 *    association that doesn't exist, it MUST silently discard it.
-	 * Becasue the length is "invalid", we can't really discard just
+	 * Because the length is "invalid", we can't really discard just
 	 * as we do not know its true length.  So, to be safe, discard the
 	 * packet.
 	 */
@@ -2379,7 +2381,7 @@ sctp_disposition_t sctp_sf_do_9_1_abort(const struct sctp_endpoint *ep,
 	 * RFC 2960, Section 3.3.7
 	 *    If an endpoint receives an ABORT with a format error or for an
 	 *    association that doesn't exist, it MUST silently discard it.
-	 * Becasue the length is "invalid", we can't really discard just
+	 * Because the length is "invalid", we can't really discard just
 	 * as we do not know its true length.  So, to be safe, discard the
 	 * packet.
 	 */
@@ -2446,7 +2448,7 @@ sctp_disposition_t sctp_sf_cookie_wait_abort(const struct sctp_endpoint *ep,
 	 * RFC 2960, Section 3.3.7
 	 *    If an endpoint receives an ABORT with a format error or for an
 	 *    association that doesn't exist, it MUST silently discard it.
-	 * Becasue the length is "invalid", we can't really discard just
+	 * Because the length is "invalid", we can't really discard just
 	 * as we do not know its true length.  So, to be safe, discard the
 	 * packet.
 	 */
@@ -2868,6 +2870,7 @@ sctp_disposition_t sctp_sf_eat_data_6_2(const struct sctp_endpoint *ep,
 					sctp_cmd_seq_t *commands)
 {
 	struct sctp_chunk *chunk = arg;
+	sctp_arg_t force = SCTP_NOFORCE();
 	int error;
 
 	if (!sctp_vtag_verify(chunk, asoc)) {
@@ -2901,6 +2904,9 @@ sctp_disposition_t sctp_sf_eat_data_6_2(const struct sctp_endpoint *ep,
 		BUG();
 	}
 
+	if (chunk->chunk_hdr->flags & SCTP_DATA_SACK_IMM)
+		force = SCTP_FORCE();
+
 	if (asoc->autoclose) {
 		sctp_add_cmd_sf(commands, SCTP_CMD_TIMER_RESTART,
 				SCTP_TO(SCTP_EVENT_TIMEOUT_AUTOCLOSE));
@@ -2929,7 +2935,7 @@ sctp_disposition_t sctp_sf_eat_data_6_2(const struct sctp_endpoint *ep,
 	 * more aggressive than the following algorithms allow.
 	 */
 	if (chunk->end_of_packet)
-		sctp_add_cmd_sf(commands, SCTP_CMD_GEN_SACK, SCTP_NOFORCE());
+		sctp_add_cmd_sf(commands, SCTP_CMD_GEN_SACK, force);
 
 	return SCTP_DISPOSITION_CONSUME;
 
@@ -2954,7 +2960,7 @@ discard_force:
 
 discard_noforce:
 	if (chunk->end_of_packet)
-		sctp_add_cmd_sf(commands, SCTP_CMD_GEN_SACK, SCTP_NOFORCE());
+		sctp_add_cmd_sf(commands, SCTP_CMD_GEN_SACK, force);
 
 	return SCTP_DISPOSITION_DISCARD;
 consume:
@@ -3572,7 +3578,7 @@ sctp_disposition_t sctp_sf_do_asconf(const struct sctp_endpoint *ep,
 	 * To do this properly, we'll set the destination address of the chunk
 	 * and at the transmit time, will try look up the transport to use.
 	 * Since ASCONFs may be bundled, the correct transport may not be
-	 * created untill we process the entire packet, thus this workaround.
+	 * created until we process the entire packet, thus this workaround.
 	 */
 	asconf_ack->dest = chunk->source;
 	sctp_add_cmd_sf(commands, SCTP_CMD_REPLY, SCTP_CHUNK(asconf_ack));
@@ -3849,7 +3855,7 @@ gen_shutdown:
 }
 
 /*
- * SCTP-AUTH Section 6.3 Receving authenticated chukns
+ * SCTP-AUTH Section 6.3 Receiving authenticated chukns
  *
  *    The receiver MUST use the HMAC algorithm indicated in the HMAC
  *    Identifier field.  If this algorithm was not specified by the
@@ -3979,7 +3985,7 @@ sctp_disposition_t sctp_sf_eat_auth(const struct sctp_endpoint *ep,
 			err_chunk = sctp_make_op_error(asoc, chunk,
 							SCTP_ERROR_UNSUP_HMAC,
 							&auth_hdr->hmac_id,
-							sizeof(__u16));
+							sizeof(__u16), 0);
 			if (err_chunk) {
 				sctp_add_cmd_sf(commands, SCTP_CMD_REPLY,
 						SCTP_CHUNK(err_chunk));
@@ -4071,7 +4077,8 @@ sctp_disposition_t sctp_sf_unk_chunk(const struct sctp_endpoint *ep,
 		hdr = unk_chunk->chunk_hdr;
 		err_chunk = sctp_make_op_error(asoc, unk_chunk,
 					       SCTP_ERROR_UNKNOWN_CHUNK, hdr,
-					       WORD_ROUND(ntohs(hdr->length)));
+					       WORD_ROUND(ntohs(hdr->length)),
+					       0);
 		if (err_chunk) {
 			sctp_add_cmd_sf(commands, SCTP_CMD_REPLY,
 					SCTP_CHUNK(err_chunk));
@@ -4090,7 +4097,8 @@ sctp_disposition_t sctp_sf_unk_chunk(const struct sctp_endpoint *ep,
 		hdr = unk_chunk->chunk_hdr;
 		err_chunk = sctp_make_op_error(asoc, unk_chunk,
 					       SCTP_ERROR_UNKNOWN_CHUNK, hdr,
-					       WORD_ROUND(ntohs(hdr->length)));
+					       WORD_ROUND(ntohs(hdr->length)),
+					       0);
 		if (err_chunk) {
 			sctp_add_cmd_sf(commands, SCTP_CMD_REPLY,
 					SCTP_CHUNK(err_chunk));
@@ -4223,7 +4231,7 @@ static sctp_disposition_t sctp_sf_abort_violation(
 	 *
 	 * This means that if we only want to abort associations
 	 * in an authenticated way (i.e AUTH+ABORT), then we
-	 * can't destroy this association just becuase the packet
+	 * can't destroy this association just because the packet
 	 * was malformed.
 	 */
 	if (sctp_auth_recv_cid(SCTP_CID_ABORT, asoc))
@@ -4394,9 +4402,9 @@ static sctp_disposition_t sctp_sf_violation_ctsn(
 }
 
 /* Handle protocol violation of an invalid chunk bundling.  For example,
- * when we have an association and we recieve bundled INIT-ACK, or
+ * when we have an association and we receive bundled INIT-ACK, or
  * SHUDOWN-COMPLETE, our peer is clearly violationg the "MUST NOT bundle"
- * statement from the specs.  Additinally, there might be an attacker
+ * statement from the specs.  Additionally, there might be an attacker
  * on the path and we may not want to continue this communication.
  */
 static sctp_disposition_t sctp_sf_violation_chunk(
@@ -6054,7 +6062,8 @@ static int sctp_eat_data(const struct sctp_association *asoc,
 
 		err = sctp_make_op_error(asoc, chunk, SCTP_ERROR_INV_STRM,
 					 &data_hdr->stream,
-					 sizeof(data_hdr->stream));
+					 sizeof(data_hdr->stream),
+					 sizeof(u16));
 		if (err)
 			sctp_add_cmd_sf(commands, SCTP_CMD_REPLY,
 					SCTP_CHUNK(err));

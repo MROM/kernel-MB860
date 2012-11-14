@@ -1218,7 +1218,7 @@ static int ds_remove(struct vio_dev *vdev)
 	return 0;
 }
 
-static struct vio_device_id __initdata ds_match[] = {
+static const struct vio_device_id ds_match[] = {
 	{
 		.type = "domain-services-port",
 	},
@@ -1242,4 +1242,4 @@ static int __init ds_init(void)
 	return vio_register_driver(&ds_driver);
 }
 
-fs_initcall(ds_init);
+subsys_initcall(ds_init);

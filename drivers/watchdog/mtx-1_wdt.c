@@ -190,19 +190,19 @@ static ssize_t mtx1_wdt_write(struct file *file, const char *buf,
 }
 
 static const struct file_operations mtx1_wdt_fops = {
-	.owner 		= THIS_MODULE,
+	.owner		= THIS_MODULE,
 	.llseek		= no_llseek,
 	.unlocked_ioctl	= mtx1_wdt_ioctl,
-	.open 		= mtx1_wdt_open,
-	.write 		= mtx1_wdt_write,
-	.release 	= mtx1_wdt_release,
+	.open		= mtx1_wdt_open,
+	.write		= mtx1_wdt_write,
+	.release	= mtx1_wdt_release,
 };
 
 
 static struct miscdevice mtx1_wdt_misc = {
-	.minor 	= WATCHDOG_MINOR,
-	.name 	= "watchdog",
-	.fops 	= &mtx1_wdt_fops,
+	.minor	= WATCHDOG_MINOR,
+	.name	= "watchdog",
+	.fops	= &mtx1_wdt_fops,
 };
 
 
@@ -211,13 +211,12 @@ static int __devinit mtx1_wdt_probe(struct platform_device *pdev)
 	int ret;
 
 	mtx1_wdt_device.gpio = pdev->resource[0].start;
-	ret = gpio_request(mtx1_wdt_device.gpio, "mtx1-wdt");
+	ret = gpio_request_one(mtx1_wdt_device.gpio,
+				GPIOF_OUT_INIT_HIGH, "mtx1-wdt");
 	if (ret < 0) {
 		dev_err(&pdev->dev, "failed to request gpio");
 		return ret;
 	}
-
-	gpio_direction_output(mtx1_wdt_device.gpio, 1);
 
 	spin_lock_init(&mtx1_wdt_device.lock);
 	init_completion(&mtx1_wdt_device.stop);

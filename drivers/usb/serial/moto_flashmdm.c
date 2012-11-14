@@ -11,6 +11,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/tty.h>
 #include <linux/module.h>
@@ -24,9 +25,9 @@
 
 static struct usb_device_id id_table[] = {
 	{USB_DEVICE_AND_INTERFACE_INFO(0x22b8, 0x2db4, 0x0a, 0, 0xfc)},
-        {USB_DEVICE_AND_INTERFACE_INFO(0x22b8, 0x4281, 0x0a, 0, 0xfc)},
-	{USB_DEVICE(0x22b8, 0x4260)},
-	{USB_DEVICE(0x22b8, 0x426D)},
+	{USB_DEVICE_AND_INTERFACE_INFO(0x22b8, 0x4281, 0x0a, 0, 0xfc)},
+	{USB_DEVICE(0x22b8, 0x4260)}, /* wrigley in flash mode */
+	{USB_DEVICE(0x22b8, 0x426d)}, /* wrigley in flash bl3080 */
 	{},
 };
 
@@ -52,6 +53,7 @@ static void omap_flashmdm_disable_uhh_smart_idle(void)
 static int moto_flashmdm_attach(struct usb_serial *serial)
 {
 	struct usb_serial_port *port = serial->port[0];
+	int i;
 
 	if (port->bulk_out_size >= MOTO_FLASHMDM_BULKOUT_SIZE) {
 		dev_info(&serial->dev->dev,
@@ -71,7 +73,23 @@ static int moto_flashmdm_attach(struct usb_serial *serial)
 			  usb_sndbulkpipe(serial->dev,
 					  port->bulk_out_endpointAddress),
 			  port->bulk_out_buffer, port->bulk_out_size,
-			  usb_serial_generic_write_bulk_callback, port);
+			  serial->type->write_bulk_callback, port);
+
+	for (i = 0; i < ARRAY_SIZE(port->write_urbs); ++i) {
+		kfree(port->bulk_out_buffers[i]);
+		port->bulk_out_buffers[i] = kmalloc(port->bulk_out_size,
+						    GFP_KERNEL);
+		if (!port->bulk_out_buffers[i]) {
+			dev_err(&serial->dev->dev,
+				"Couldn't allocate bulk_out_buffer\n");
+			return -ENOMEM;
+		}
+		usb_fill_bulk_urb(port->write_urbs[i], serial->dev,
+				  usb_sndbulkpipe(serial->dev,
+						  port->bulk_out_endpointAddress),
+				  port->bulk_out_buffers[i], port->bulk_out_size,
+				  serial->type->write_bulk_callback, port);
+	}
 
 #if defined(CONFIG_ARCH_OMAP34XX)
 	/* need to disable the AUTO IDLE for the usb iclk */
@@ -95,6 +113,7 @@ static struct usb_serial_driver moto_flashmdm_device = {
 		   .owner = THIS_MODULE,
 		   .name = "moto-flashmdm",
 		   },
+	.usb_driver = &moto_flashmdm_driver,
 	.id_table = id_table,
 	.num_ports = 1,
 	.attach = moto_flashmdm_attach,
@@ -122,3 +141,4 @@ static void __exit moto_flashmdm_exit(void)
 module_init(moto_flashmdm_init);
 module_exit(moto_flashmdm_exit);
 MODULE_LICENSE("GPL");
+

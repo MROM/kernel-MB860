@@ -16,6 +16,7 @@
 #include <linux/err.h>
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 
 /*
  * This function can't run concurrently against mmu_notifier_register
@@ -32,24 +33,6 @@
 void __mmu_notifier_release(struct mm_struct *mm)
 {
 	struct mmu_notifier *mn;
-	struct hlist_node *n;
-
-	/*
-	 * RCU here will block mmu_notifier_unregister until
-	 * ->release returns.
-	 */
-	rcu_read_lock();
-	hlist_for_each_entry_rcu(mn, n, &mm->mmu_notifier_mm->list, hlist)
-		/*
-		 * if ->release runs before mmu_notifier_unregister it
-		 * must be handled as it's the only way for the driver
-		 * to flush all existing sptes and stop the driver
-		 * from establishing any more sptes before all the
-		 * pages in the mm are freed.
-		 */
-		if (mn->ops->release)
-			mn->ops->release(mn, mm);
-	rcu_read_unlock();
 
 	spin_lock(&mm->mmu_notifier_mm->lock);
 	while (unlikely(!hlist_empty(&mm->mmu_notifier_mm->list))) {
@@ -63,6 +46,23 @@ void __mmu_notifier_release(struct mm_struct *mm)
 		 * mmu_notifier_unregister to return.
 		 */
 		hlist_del_init_rcu(&mn->hlist);
+		/*
+		 * RCU here will block mmu_notifier_unregister until
+		 * ->release returns.
+		 */
+		rcu_read_lock();
+		spin_unlock(&mm->mmu_notifier_mm->lock);
+		/*
+		 * if ->release runs before mmu_notifier_unregister it
+		 * must be handled as it's the only way for the driver
+		 * to flush all existing sptes and stop the driver
+		 * from establishing any more sptes before all the
+		 * pages in the mm are freed.
+		 */
+		if (mn->ops->release)
+			mn->ops->release(mn, mm);
+		rcu_read_unlock();
+		spin_lock(&mm->mmu_notifier_mm->lock);
 	}
 	spin_unlock(&mm->mmu_notifier_mm->lock);
 
@@ -94,6 +94,26 @@ int __mmu_notifier_clear_flush_young(struct mm_struct *mm,
 	hlist_for_each_entry_rcu(mn, n, &mm->mmu_notifier_mm->list, hlist) {
 		if (mn->ops->clear_flush_young)
 			young |= mn->ops->clear_flush_young(mn, mm, address);
+	}
+	rcu_read_unlock();
+
+	return young;
+}
+
+int __mmu_notifier_test_young(struct mm_struct *mm,
+			      unsigned long address)
+{
+	struct mmu_notifier *mn;
+	struct hlist_node *n;
+	int young = 0;
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(mn, n, &mm->mmu_notifier_mm->list, hlist) {
+		if (mn->ops->test_young) {
+			young = mn->ops->test_young(mn, mm, address);
+			if (young)
+				break;
+		}
 	}
 	rcu_read_unlock();
 
@@ -264,13 +284,16 @@ void mmu_notifier_unregister(struct mmu_notifier *mn, struct mm_struct *mm)
 {
 	BUG_ON(atomic_read(&mm->mm_count) <= 0);
 
+	spin_lock(&mm->mmu_notifier_mm->lock);
 	if (!hlist_unhashed(&mn->hlist)) {
+		hlist_del_rcu(&mn->hlist);
+
 		/*
 		 * RCU here will force exit_mmap to wait ->release to finish
 		 * before freeing the pages.
 		 */
 		rcu_read_lock();
-
+		spin_unlock(&mm->mmu_notifier_mm->lock);
 		/*
 		 * exit_mmap will block in mmu_notifier_release to
 		 * guarantee ->release is called before freeing the
@@ -279,11 +302,8 @@ void mmu_notifier_unregister(struct mmu_notifier *mn, struct mm_struct *mm)
 		if (mn->ops->release)
 			mn->ops->release(mn, mm);
 		rcu_read_unlock();
-
-		spin_lock(&mm->mmu_notifier_mm->lock);
-		hlist_del_rcu(&mn->hlist);
+	} else
 		spin_unlock(&mm->mmu_notifier_mm->lock);
-	}
 
 	/*
 	 * Wait any running method to finish, of course including

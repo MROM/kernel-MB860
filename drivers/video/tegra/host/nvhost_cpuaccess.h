@@ -45,7 +45,6 @@ enum nvhost_module_id {
 struct nvhost_cpuaccess {
 	struct resource *reg_mem[NVHOST_MODULE_NUM];
 	void __iomem *regs[NVHOST_MODULE_NUM];
-	atomic_t lock_counts[NV_HOST1X_SYNC_MLOCK_NUM];
 };
 
 int nvhost_cpuaccess_init(struct nvhost_cpuaccess *ctx,
@@ -60,7 +59,7 @@ void nvhost_mutex_unlock(struct nvhost_cpuaccess *ctx, unsigned int idx);
 static inline bool nvhost_access_module_regs(
 	struct nvhost_cpuaccess *ctx, u32 module)
 {
-	return (module < NVHOST_MODULE_NUM) && ctx->reg_mem[module];
+	return (module < NVHOST_MODULE_NUM);
 }
 
 void nvhost_read_module_regs(struct nvhost_cpuaccess *ctx, u32 module,

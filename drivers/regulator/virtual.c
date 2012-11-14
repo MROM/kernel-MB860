@@ -15,11 +15,12 @@
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
+#include <linux/slab.h>
 
 struct virtual_consumer_data {
 	struct mutex lock;
 	struct regulator *regulator;
-	int enabled;
+	bool enabled;
 	int min_uV;
 	int max_uV;
 	int min_uA;
@@ -27,7 +28,6 @@ struct virtual_consumer_data {
 	unsigned int mode;
 };
 
-#if 0
 static void update_voltage_constraints(struct device *dev,
 				       struct virtual_consumer_data *data)
 {
@@ -50,7 +50,7 @@ static void update_voltage_constraints(struct device *dev,
 		dev_dbg(dev, "Enabling regulator\n");
 		ret = regulator_enable(data->regulator);
 		if (ret == 0)
-			data->enabled = 1;
+			data->enabled = true;
 		else
 			dev_err(dev, "regulator_enable() failed: %d\n",
 				ret);
@@ -60,7 +60,7 @@ static void update_voltage_constraints(struct device *dev,
 		dev_dbg(dev, "Disabling regulator\n");
 		ret = regulator_disable(data->regulator);
 		if (ret == 0)
-			data->enabled = 0;
+			data->enabled = false;
 		else
 			dev_err(dev, "regulator_disable() failed: %d\n",
 				ret);
@@ -90,7 +90,7 @@ static void update_current_limit_constraints(struct device *dev,
 		dev_dbg(dev, "Enabling regulator\n");
 		ret = regulator_enable(data->regulator);
 		if (ret == 0)
-			data->enabled = 1;
+			data->enabled = true;
 		else
 			dev_err(dev, "regulator_enable() failed: %d\n",
 				ret);
@@ -100,7 +100,7 @@ static void update_current_limit_constraints(struct device *dev,
 		dev_dbg(dev, "Disabling regulator\n");
 		ret = regulator_disable(data->regulator);
 		if (ret == 0)
-			data->enabled = 0;
+			data->enabled = false;
 		else
 			dev_err(dev, "regulator_disable() failed: %d\n",
 				ret);
@@ -264,102 +264,35 @@ static ssize_t set_mode(struct device *dev, struct device_attribute *attr,
 
 	return count;
 }
-#endif
 
-static ssize_t show_enabled(struct device *dev,
-			 struct device_attribute *attr, char *buf)
-{
-	struct virtual_consumer_data *data = dev_get_drvdata(dev);
-
-	switch (data->enabled) {
-	case 0:
-		return sprintf(buf, "off\n");
-	case 1:
-		return sprintf(buf, "on\n");
-	default:
-		return sprintf(buf, "unknown\n");
-	}
-}
-
-static ssize_t set_enabled(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
-{
-	struct virtual_consumer_data *data = dev_get_drvdata(dev);
-	unsigned int enable;
-	int ret;
-
-	if (strncmp(buf, "on", strlen("on")) == 0)
-		enable = 1;
-	else if (strncmp(buf, "off", strlen("off")) == 0)
-		enable = 0;
-	else {
-		dev_err(dev, "Invalid enable setting, use on or off\n");
-		return count;
-	}
-
-	mutex_lock(&data->lock);
-        if (enable == 1) {
-		if (data->enabled == 0 || data->enabled == 2) {
-		        ret = regulator_enable(data->regulator);
-
-		        if (ret == 0)
-				data->enabled = 1;
-			else
-				printk(KERN_ERR "%s: regulator_enable() failed: %d\n", __func__, ret);
-		}
-		else {                
-		        printk(KERN_ERR "%s: regulator %s already enabled \n", __func__, dev->driver->name);
-		}
-        }
-        else {
-                if (data->enabled == 1) {
-                        ret = regulator_disable(data->regulator);
-		        if (ret == 0)
-				data->enabled = 0;
-			else
-				printk(KERN_ERR "%s: regulator_disable() failed: %d\n", __func__, ret);
-        }
-        else {
-		        printk(KERN_ERR "%s: regulator %s already disabled \n", __func__, dev->driver->name);
-                }
-        }
-
-	mutex_unlock(&data->lock);
-
-	return count;
-}
-
-static DEVICE_ATTR(enabled, 0660, show_enabled, set_enabled);
-struct device_attribute *attributes[] = {
-	&dev_attr_enabled,
-};
-
-#if 0
 static DEVICE_ATTR(min_microvolts, 0666, show_min_uV, set_min_uV);
 static DEVICE_ATTR(max_microvolts, 0666, show_max_uV, set_max_uV);
 static DEVICE_ATTR(min_microamps, 0666, show_min_uA, set_min_uA);
 static DEVICE_ATTR(max_microamps, 0666, show_max_uA, set_max_uA);
 static DEVICE_ATTR(mode, 0666, show_mode, set_mode);
 
-static struct device_attribute *attributes[] = {
-	&dev_attr_min_microvolts,
-	&dev_attr_max_microvolts,
-	&dev_attr_min_microamps,
-	&dev_attr_max_microamps,
-	&dev_attr_mode,
+static struct attribute *regulator_virtual_attributes[] = {
+	&dev_attr_min_microvolts.attr,
+	&dev_attr_max_microvolts.attr,
+	&dev_attr_min_microamps.attr,
+	&dev_attr_max_microamps.attr,
+	&dev_attr_mode.attr,
+	NULL
 };
-#endif
 
-static int regulator_virtual_consumer_probe(struct platform_device *pdev)
+static const struct attribute_group regulator_virtual_attr_group = {
+	.attrs	= regulator_virtual_attributes,
+};
+
+static int __devinit regulator_virtual_probe(struct platform_device *pdev)
 {
 	char *reg_id = pdev->dev.platform_data;
 	struct virtual_consumer_data *drvdata;
-	int ret, i;
+	int ret;
 
 	drvdata = kzalloc(sizeof(struct virtual_consumer_data), GFP_KERNEL);
-	if (drvdata == NULL) {
+	if (drvdata == NULL)
 		return -ENOMEM;
-	}
 
 	mutex_init(&drvdata->lock);
 
@@ -371,114 +304,52 @@ static int regulator_virtual_consumer_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(attributes); i++) {
-		ret = device_create_file(&pdev->dev, attributes[i]);
-		if (ret != 0) {
-			dev_err(&pdev->dev, "Failed to create attr %d: %d\n",
-				i, ret);
-			goto err_regulator;
-		}
+	ret = sysfs_create_group(&pdev->dev.kobj,
+				 &regulator_virtual_attr_group);
+	if (ret != 0) {
+		dev_err(&pdev->dev,
+			"Failed to create attribute group: %d\n", ret);
+		goto err_regulator;
 	}
 
 	drvdata->mode = regulator_get_mode(drvdata->regulator);
 
 	platform_set_drvdata(pdev, drvdata);
 
-        if (strncmp(reg_id, "sw5", strlen("sw5")) == 0) {
-                regulator_enable(drvdata->regulator);
-                drvdata->enabled = 1;               
-        }
-
 	return 0;
 
 err_regulator:
 	regulator_put(drvdata->regulator);
 err:
-	for (i = 0; i < ARRAY_SIZE(attributes); i++)
-		device_remove_file(&pdev->dev, attributes[i]);
 	kfree(drvdata);
 	return ret;
 }
 
-static int regulator_virtual_consumer_remove(struct platform_device *pdev)
+static int __devexit regulator_virtual_remove(struct platform_device *pdev)
 {
 	struct virtual_consumer_data *drvdata = platform_get_drvdata(pdev);
-	int i;
 
-	for (i = 0; i < ARRAY_SIZE(attributes); i++)
-		device_remove_file(&pdev->dev, attributes[i]);
+	sysfs_remove_group(&pdev->dev.kobj, &regulator_virtual_attr_group);
+
 	if (drvdata->enabled)
 		regulator_disable(drvdata->regulator);
 	regulator_put(drvdata->regulator);
 
 	kfree(drvdata);
 
+	platform_set_drvdata(pdev, NULL);
+
 	return 0;
 }
 
-static struct platform_driver regulator_virtual_consumer_vcam_driver = {
-	.probe		= regulator_virtual_consumer_probe,
-	.remove		= regulator_virtual_consumer_remove,
-	.driver		= {
-		.name		= "reg-virt-vcam",
-	},
-};
-
-static struct platform_driver regulator_virtual_consumer_vcsi_driver = {
-	.probe		= regulator_virtual_consumer_probe,
-	.remove		= regulator_virtual_consumer_remove,
-	.driver		= {
-		.name		= "reg-virt-vcsi",
-	},
-};
-
-static struct platform_driver regulator_virtual_consumer_vcsi_2_driver = {
-	.probe		= regulator_virtual_consumer_probe,
-	.remove		= regulator_virtual_consumer_remove,
-	.driver		= {
-		.name		= "reg-virt-vcsi_2",
-	},
-};
-
-static struct platform_driver regulator_virtual_consumer_sw5_driver = {
-	.probe		= regulator_virtual_consumer_probe,
-	.remove		= regulator_virtual_consumer_remove,
-	.driver		= {
-		.name		= "reg-virt-sw5",
-	},
-};
-
 static struct platform_driver regulator_virtual_consumer_driver = {
-	.probe		= regulator_virtual_consumer_probe,
-	.remove		= regulator_virtual_consumer_remove,
+	.probe		= regulator_virtual_probe,
+	.remove		= __devexit_p(regulator_virtual_remove),
 	.driver		= {
 		.name		= "reg-virt-consumer",
+		.owner		= THIS_MODULE,
 	},
 };
-
-static int __init regulator_virtual_consumer_vcam_init(void)
-{
-	return platform_driver_register(&regulator_virtual_consumer_vcam_driver);
-}
-module_init(regulator_virtual_consumer_vcam_init);
-
-static int __init regulator_virtual_consumer_vcsi_init(void)
-{
-	return platform_driver_register(&regulator_virtual_consumer_vcsi_driver);
-}
-module_init(regulator_virtual_consumer_vcsi_init);
-
-static int __init regulator_virtual_consumer_vcsi_2_init(void)
-{
-	return platform_driver_register(&regulator_virtual_consumer_vcsi_2_driver);
-}
-module_init(regulator_virtual_consumer_vcsi_2_init);
-
-static int __init regulator_virtual_consumer_sw5_init(void)
-{
-	return platform_driver_register(&regulator_virtual_consumer_sw5_driver);
-}
-module_init(regulator_virtual_consumer_sw5_init);
 
 static int __init regulator_virtual_consumer_init(void)
 {

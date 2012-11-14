@@ -400,6 +400,39 @@ linux_trap_ipi15_sun4d:
 	/* FIXME */
 1:	b,a	1b
 
+#ifdef CONFIG_SPARC_LEON
+
+	.globl	smpleon_ticker
+	/* SMP per-cpu ticker interrupts are handled specially. */
+smpleon_ticker:
+        SAVE_ALL
+	or	%l0, PSR_PIL, %g2
+	wr	%g2, 0x0, %psr
+	WRITE_PAUSE
+	wr	%g2, PSR_ET, %psr
+	WRITE_PAUSE
+	call	leon_percpu_timer_interrupt
+	 add	%sp, STACKFRAME_SZ, %o0
+	wr	%l0, PSR_ET, %psr
+	WRITE_PAUSE
+	RESTORE_ALL
+
+	.align	4
+	.globl	linux_trap_ipi15_leon
+linux_trap_ipi15_leon:
+	SAVE_ALL
+	or	%l0, PSR_PIL, %l4
+	wr	%l4, 0x0, %psr
+	WRITE_PAUSE
+	wr	%l4, PSR_ET, %psr
+	WRITE_PAUSE
+	call	leon_cross_call_irq
+	 nop
+	b	ret_trap_lockless_ipi
+	 clr	%l6
+
+#endif /* CONFIG_SPARC_LEON */
+
 #endif /* CONFIG_SMP */
 
 	/* This routine handles illegal instructions and privileged
@@ -768,7 +801,7 @@ vac_linesize_patch_32:		subcc	%l7, 32, %l7
 	.globl	vac_hwflush_patch1_on, vac_hwflush_patch2_on
 
 /*
- * Ugly, but we cant use hardware flushing on the sun4 and we'd require
+ * Ugly, but we can't use hardware flushing on the sun4 and we'd require
  * two instructions (Anton)
  */
 vac_hwflush_patch1_on:		addcc	%l7, -PAGE_SIZE, %l7
@@ -818,7 +851,7 @@ sun4c_fault:
 	 sethi	%hi(~((1 << SUN4C_REAL_PGDIR_SHIFT) - 1)), %l4
 
 	/* If the kernel references a bum kernel pointer, or a pte which
-	 * points to a non existant page in ram, we will run this code
+	 * points to a non existent page in ram, we will run this code
 	 * _forever_ and lock up the machine!!!!! So we must check for
 	 * this condition, the AC_SYNC_ERR bits are what we must examine.
 	 * Also a parity error would make this happen as well.  So we just
@@ -1250,7 +1283,7 @@ linux_syscall_trace:
 	.globl	ret_from_fork
 ret_from_fork:
 	call	schedule_tail
-	 mov	%g3, %o0
+	 ld	[%g3 + TI_TASK], %o0
 	b	ret_sys_call
 	 ld	[%sp + STACKFRAME_SZ + PT_I0], %o0
 
@@ -1261,7 +1294,7 @@ linux_sparc_syscall:
 	sethi	%hi(PSR_SYSCALL), %l4
 	or	%l0, %l4, %l0
 	/* Direct access to user regs, must faster. */
-	cmp	%g1, NR_SYSCALLS
+	cmp	%g1, NR_syscalls
 	bgeu	linux_sparc_ni_syscall
 	 sll	%g1, 2, %l4
 	ld	[%l7 + %l4], %l7

@@ -34,38 +34,46 @@
 
 #define IXGB_ALL_RAR_ENTRIES 16
 
+enum {NETDEV_STATS, IXGB_STATS};
+
 struct ixgb_stats {
 	char stat_string[ETH_GSTRING_LEN];
+	int type;
 	int sizeof_stat;
 	int stat_offset;
 };
 
-#define IXGB_STAT(m) FIELD_SIZEOF(struct ixgb_adapter, m), \
-		      offsetof(struct ixgb_adapter, m)
-static struct ixgb_stats ixgb_gstrings_stats[] = {
-	{"rx_packets", IXGB_STAT(net_stats.rx_packets)},
-	{"tx_packets", IXGB_STAT(net_stats.tx_packets)},
-	{"rx_bytes", IXGB_STAT(net_stats.rx_bytes)},
-	{"tx_bytes", IXGB_STAT(net_stats.tx_bytes)},
-	{"rx_errors", IXGB_STAT(net_stats.rx_errors)},
-	{"tx_errors", IXGB_STAT(net_stats.tx_errors)},
-	{"rx_dropped", IXGB_STAT(net_stats.rx_dropped)},
-	{"tx_dropped", IXGB_STAT(net_stats.tx_dropped)},
-	{"multicast", IXGB_STAT(net_stats.multicast)},
-	{"collisions", IXGB_STAT(net_stats.collisions)},
+#define IXGB_STAT(m)		IXGB_STATS, \
+				FIELD_SIZEOF(struct ixgb_adapter, m), \
+				offsetof(struct ixgb_adapter, m)
+#define IXGB_NETDEV_STAT(m)	NETDEV_STATS, \
+				FIELD_SIZEOF(struct net_device, m), \
+				offsetof(struct net_device, m)
 
-/*	{ "rx_length_errors", IXGB_STAT(net_stats.rx_length_errors) },	*/
-	{"rx_over_errors", IXGB_STAT(net_stats.rx_over_errors)},
-	{"rx_crc_errors", IXGB_STAT(net_stats.rx_crc_errors)},
-	{"rx_frame_errors", IXGB_STAT(net_stats.rx_frame_errors)},
+static struct ixgb_stats ixgb_gstrings_stats[] = {
+	{"rx_packets", IXGB_NETDEV_STAT(stats.rx_packets)},
+	{"tx_packets", IXGB_NETDEV_STAT(stats.tx_packets)},
+	{"rx_bytes", IXGB_NETDEV_STAT(stats.rx_bytes)},
+	{"tx_bytes", IXGB_NETDEV_STAT(stats.tx_bytes)},
+	{"rx_errors", IXGB_NETDEV_STAT(stats.rx_errors)},
+	{"tx_errors", IXGB_NETDEV_STAT(stats.tx_errors)},
+	{"rx_dropped", IXGB_NETDEV_STAT(stats.rx_dropped)},
+	{"tx_dropped", IXGB_NETDEV_STAT(stats.tx_dropped)},
+	{"multicast", IXGB_NETDEV_STAT(stats.multicast)},
+	{"collisions", IXGB_NETDEV_STAT(stats.collisions)},
+
+/*	{ "rx_length_errors", IXGB_NETDEV_STAT(stats.rx_length_errors) },	*/
+	{"rx_over_errors", IXGB_NETDEV_STAT(stats.rx_over_errors)},
+	{"rx_crc_errors", IXGB_NETDEV_STAT(stats.rx_crc_errors)},
+	{"rx_frame_errors", IXGB_NETDEV_STAT(stats.rx_frame_errors)},
 	{"rx_no_buffer_count", IXGB_STAT(stats.rnbc)},
-	{"rx_fifo_errors", IXGB_STAT(net_stats.rx_fifo_errors)},
-	{"rx_missed_errors", IXGB_STAT(net_stats.rx_missed_errors)},
-	{"tx_aborted_errors", IXGB_STAT(net_stats.tx_aborted_errors)},
-	{"tx_carrier_errors", IXGB_STAT(net_stats.tx_carrier_errors)},
-	{"tx_fifo_errors", IXGB_STAT(net_stats.tx_fifo_errors)},
-	{"tx_heartbeat_errors", IXGB_STAT(net_stats.tx_heartbeat_errors)},
-	{"tx_window_errors", IXGB_STAT(net_stats.tx_window_errors)},
+	{"rx_fifo_errors", IXGB_NETDEV_STAT(stats.rx_fifo_errors)},
+	{"rx_missed_errors", IXGB_NETDEV_STAT(stats.rx_missed_errors)},
+	{"tx_aborted_errors", IXGB_NETDEV_STAT(stats.tx_aborted_errors)},
+	{"tx_carrier_errors", IXGB_NETDEV_STAT(stats.tx_carrier_errors)},
+	{"tx_fifo_errors", IXGB_NETDEV_STAT(stats.tx_fifo_errors)},
+	{"tx_heartbeat_errors", IXGB_NETDEV_STAT(stats.tx_heartbeat_errors)},
+	{"tx_window_errors", IXGB_NETDEV_STAT(stats.tx_window_errors)},
 	{"tx_deferred_ok", IXGB_STAT(stats.dc)},
 	{"tx_timeout_count", IXGB_STAT(tx_timeout_count) },
 	{"tx_restart_queue", IXGB_STAT(restart_queue) },
@@ -402,7 +410,7 @@ static int
 ixgb_get_eeprom_len(struct net_device *netdev)
 {
 	/* return size in bytes */
-	return (IXGB_EEPROM_SIZE << 1);
+	return IXGB_EEPROM_SIZE << 1;
 }
 
 static int
@@ -662,10 +670,21 @@ ixgb_get_ethtool_stats(struct net_device *netdev,
 {
 	struct ixgb_adapter *adapter = netdev_priv(netdev);
 	int i;
+	char *p = NULL;
 
 	ixgb_update_stats(adapter);
 	for (i = 0; i < IXGB_STATS_LEN; i++) {
-		char *p = (char *)adapter+ixgb_gstrings_stats[i].stat_offset;
+		switch (ixgb_gstrings_stats[i].type) {
+		case NETDEV_STATS:
+			p = (char *) netdev +
+					ixgb_gstrings_stats[i].stat_offset;
+			break;
+		case IXGB_STATS:
+			p = (char *) adapter +
+					ixgb_gstrings_stats[i].stat_offset;
+			break;
+		}
+
 		data[i] = (ixgb_gstrings_stats[i].sizeof_stat ==
 			sizeof(u64)) ? *(u64 *)p : *(u32 *)p;
 	}
@@ -685,6 +704,43 @@ ixgb_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 		}
 		break;
 	}
+}
+
+static int ixgb_set_flags(struct net_device *netdev, u32 data)
+{
+	struct ixgb_adapter *adapter = netdev_priv(netdev);
+	bool need_reset;
+	int rc;
+
+	/*
+	 * Tx VLAN insertion does not work per HW design when Rx stripping is
+	 * disabled.  Disable txvlan when rxvlan is turned off, and enable
+	 * rxvlan when txvlan is turned on.
+	 */
+	if (!(data & ETH_FLAG_RXVLAN) &&
+	    (netdev->features & NETIF_F_HW_VLAN_TX))
+		data &= ~ETH_FLAG_TXVLAN;
+	else if (data & ETH_FLAG_TXVLAN)
+		data |= ETH_FLAG_RXVLAN;
+
+	need_reset = (data & ETH_FLAG_RXVLAN) !=
+		     (netdev->features & NETIF_F_HW_VLAN_RX);
+
+	rc = ethtool_op_set_flags(netdev, data, ETH_FLAG_RXVLAN |
+						ETH_FLAG_TXVLAN);
+	if (rc)
+		return rc;
+
+	if (need_reset) {
+		if (netif_running(netdev)) {
+			ixgb_down(adapter, true);
+			ixgb_up(adapter);
+			ixgb_set_speed_duplex(netdev);
+		} else
+			ixgb_reset(adapter);
+	}
+
+	return 0;
 }
 
 static const struct ethtool_ops ixgb_ethtool_ops = {
@@ -713,6 +769,8 @@ static const struct ethtool_ops ixgb_ethtool_ops = {
 	.phys_id = ixgb_phys_id,
 	.get_sset_count = ixgb_get_sset_count,
 	.get_ethtool_stats = ixgb_get_ethtool_stats,
+	.get_flags = ethtool_op_get_flags,
+	.set_flags = ixgb_set_flags,
 };
 
 void ixgb_set_ethtool_ops(struct net_device *netdev)

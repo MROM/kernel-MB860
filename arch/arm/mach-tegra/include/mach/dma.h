@@ -56,19 +56,20 @@ struct tegra_dma_channel;
 #define TEGRA_DMA_REQ_SEL_OWR			25
 #define TEGRA_DMA_REQ_SEL_INVALID		31
 
+#define TEGRA_DMA_MAX_TRANSFER_SIZE		0x10000
+
 enum tegra_dma_mode {
 	TEGRA_DMA_SHARED = 1,
 	TEGRA_DMA_MODE_CONTINUOUS = 2,
-	TEGRA_DMA_MODE_ONESHOT = 4,
-	TEGRA_DMA_MODE_SAME_BUFFER = 8,
-	TEGRA_DMA_MODE_CONTINUOUS_SAME_BUFFER = 0xA,
+	TEGRA_DMA_MODE_CONTINUOUS_DOUBLE = TEGRA_DMA_MODE_CONTINUOUS,
+	TEGRA_DMA_MODE_CONTINUOUS_SINGLE = 4,
+	TEGRA_DMA_MODE_ONESHOT = 8,
 };
 
 enum tegra_dma_req_error {
 	TEGRA_DMA_REQ_SUCCESS = 0,
 	TEGRA_DMA_REQ_ERROR_ABORTED,
 	TEGRA_DMA_REQ_INFLIGHT,
-	TEGRA_DMA_REQ_STOPPED,
 };
 
 enum tegra_dma_req_buff_status {
@@ -79,6 +80,7 @@ enum tegra_dma_req_buff_status {
 
 struct tegra_dma_req {
 	struct list_head node;
+	unsigned int modid;
 	int instance;
 
 	/* Called when the req is complete and from the DMA ISR context.
@@ -94,11 +96,11 @@ struct tegra_dma_req {
 	/*  This is a called from the DMA ISR context when the DMA is still in
 	 *  progress and is actively filling same buffer.
 	 *
-	 *  In case of continous mode receive, this threshold is 1/2 the buffer
+	 *  In case of continuous mode receive, this threshold is 1/2 the buffer
 	 *  size. In other cases, this will not even be called as there is no
 	 *  hardware support for it.
 	 *
-	 * In the case of continous mode receive, if there is next req already
+	 * In the case of continuous mode receive, if there is next req already
 	 * queued, DMA programs the HW to use that req when this req is
 	 * completed. If there is no "next req" queued, then DMA ISR doesn't do
 	 * anything before calling this callback.
@@ -132,9 +134,6 @@ struct tegra_dma_req {
 	/* DMA completion tracking information */
 	int buffer_status;
 
-	/* Repeat same buffer provided on this request*/
-	bool is_repeat_req;
-
 	/* Client specific data */
 	void *dev;
 };
@@ -143,31 +142,24 @@ int tegra_dma_enqueue_req(struct tegra_dma_channel *ch,
 	struct tegra_dma_req *req);
 int tegra_dma_dequeue_req(struct tegra_dma_channel *ch,
 	struct tegra_dma_req *req);
-void tegra_dma_dequeue(struct tegra_dma_channel *ch);
 void tegra_dma_flush(struct tegra_dma_channel *ch);
-int tegra_dma_cancel(struct tegra_dma_channel *ch);
-
-unsigned int tegra_dma_transferred_req(struct tegra_dma_channel *ch,
-	struct tegra_dma_req *req);
-
-int tegra_dma_get_transfer_count(struct tegra_dma_channel *ch,
-	struct tegra_dma_req *_req, bool is_stop_dma);
-int tegra_dma_start_dma(struct tegra_dma_channel *ch,
-	struct tegra_dma_req *_req);
 
 bool tegra_dma_is_req_inflight(struct tegra_dma_channel *ch,
 	struct tegra_dma_req *req);
 bool tegra_dma_is_empty(struct tegra_dma_channel *ch);
+bool tegra_dma_is_stopped(struct tegra_dma_channel *ch);
 
-struct tegra_dma_channel *tegra_dma_allocate_channel(int mode,
-	const char namefmt[], ...);
+struct tegra_dma_channel *tegra_dma_allocate_channel(int mode);
 void tegra_dma_free_channel(struct tegra_dma_channel *ch);
+int tegra_dma_cancel(struct tegra_dma_channel *ch);
 
 int __init tegra_dma_init(void);
 
-#else /* CONFIG_TEGRA_SYSTEM_DMA */
-
-static inline int tegra_dma_init(void) { return 0; }
+#else /* !defined(CONFIG_TEGRA_SYSTEM_DMA) */
+static inline int tegra_dma_init(void)
+{
+	return 0;
+}
 
 #endif
 

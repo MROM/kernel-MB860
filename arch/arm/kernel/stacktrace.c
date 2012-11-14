@@ -1,7 +1,7 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/stacktrace.h>
-#include <linux/cpumask.h>
+
 #include <asm/stacktrace.h>
 
 #if defined(CONFIG_FRAME_POINTER) && !defined(CONFIG_ARM_UNWIND)
@@ -94,17 +94,13 @@ void save_stack_trace_tsk(struct task_struct *tsk, struct stack_trace *trace)
 	if (tsk != current) {
 #ifdef CONFIG_SMP
 		/*
-		 * What guarantees do we have here that 'tsk'
-		 * is not running on another CPU?
+		 * What guarantees do we have here that 'tsk' is not
+		 * running on another CPU?  For now, ignore it as we
+		 * can't guarantee we won't explode.
 		 */
-#ifdef CONFIG_MACH_MOT
-		if (cpu_online(1)) {
-			printk(KERN_INFO "save_stack_trace_tsk() called from unsafe SMP context\n");
-			return;
-		}
-#else
-		BUG();
-#endif
+		if (trace->nr_entries < trace->max_entries)
+			trace->entries[trace->nr_entries++] = ULONG_MAX;
+		return;
 #else
 		data.no_sched_functions = 1;
 		frame.fp = thread_saved_fp(tsk);

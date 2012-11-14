@@ -51,7 +51,7 @@
 #include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/acpi.h>
-#include <asm/io.h>
+#include <linux/io.h>
 
 static struct pci_dev *vt596_pdev;
 
@@ -165,10 +165,10 @@ static int vt596_transaction(u8 size)
 	do {
 		msleep(1);
 		temp = inb_p(SMBHSTSTS);
-	} while ((temp & 0x01) && (timeout++ < MAX_TIMEOUT));
+	} while ((temp & 0x01) && (++timeout < MAX_TIMEOUT));
 
 	/* If the SMBus is still busy, we give up */
-	if (timeout >= MAX_TIMEOUT) {
+	if (timeout == MAX_TIMEOUT) {
 		result = -ETIMEDOUT;
 		dev_err(&vt596_adapter.dev, "SMBus timeout!\n");
 	}
@@ -185,14 +185,8 @@ static int vt596_transaction(u8 size)
 	}
 
 	if (temp & 0x04) {
-		int read = inb_p(SMBHSTADD) & 0x01;
 		result = -ENXIO;
-		/* The quick and receive byte commands are used to probe
-		   for chips, so errors are expected, and we don't want
-		   to frighten the user. */
-		if (!((size == VT596_QUICK && !read) ||
-		      (size == VT596_BYTE && read)))
-			dev_err(&vt596_adapter.dev, "Transaction error!\n");
+		dev_dbg(&vt596_adapter.dev, "No response\n");
 	}
 
 	/* Resetting status register */
@@ -330,7 +324,7 @@ static int __devinit vt596_probe(struct pci_dev *pdev,
 				 const struct pci_device_id *id)
 {
 	unsigned char temp;
-	int error;
+	int error = -ENODEV;
 
 	/* Determine the address of the SMBus areas */
 	if (force_addr) {
@@ -396,7 +390,6 @@ found:
 			dev_err(&pdev->dev, "SMBUS: Error: Host SMBus "
 				"controller not enabled! - upgrade BIOS or "
 				"use force=1\n");
-			error = -ENODEV;
 			goto release_region;
 		}
 	}
@@ -429,11 +422,9 @@ found:
 		 "SMBus Via Pro adapter at %04x", vt596_smba);
 
 	vt596_pdev = pci_dev_get(pdev);
-	error = i2c_add_adapter(&vt596_adapter);
-	if (error) {
+	if (i2c_add_adapter(&vt596_adapter)) {
 		pci_dev_put(vt596_pdev);
 		vt596_pdev = NULL;
-		goto release_region;
 	}
 
 	/* Always return failure here.  This is to allow other drivers to bind
@@ -447,7 +438,7 @@ release_region:
 	return error;
 }
 
-static struct pci_device_id vt596_ids[] = {
+static const struct pci_device_id vt596_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_82C596_3),
 	  .driver_data = SMBBA1 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_82C596B_3),

@@ -21,7 +21,7 @@
 #ifndef __MACH_TEGRA_IO_H
 #define __MACH_TEGRA_IO_H
 
-#define IO_SPACE_LIMIT 0xffffffff
+#define IO_SPACE_LIMIT 0xffff
 
 /* On TEGRA, many peripherals are very closely packed in
  * two 256MB io windows (that actually only use about 64KB
@@ -83,18 +83,28 @@
 
 #ifndef __ASSEMBLER__
 
-#define __arch_ioremap(p, s, t)	tegra_ioremap(p, s, t)
-#define __arch_iounmap(v)	tegra_iounmap(v)
+#define __arch_ioremap		tegra_ioremap
+#define __arch_iounmap		tegra_iounmap
 
 void __iomem *tegra_ioremap(unsigned long phys, size_t size, unsigned int type);
 void tegra_iounmap(volatile void __iomem *addr);
 
 #define IO_ADDRESS(n) ((void __iomem *) IO_TO_VIRT(n))
 
+#ifdef CONFIG_TEGRA_PCI
+extern void __iomem *tegra_pcie_io_base;
+
+static inline void __iomem *__io(unsigned long addr)
+{
+	return tegra_pcie_io_base + (addr & IO_SPACE_LIMIT);
+}
+#else
 static inline void __iomem *__io(unsigned long addr)
 {
 	return (void __iomem *)addr;
 }
+#endif
+
 #define __io(a)         __io(a)
 #define __mem_pci(a)    (a)
 

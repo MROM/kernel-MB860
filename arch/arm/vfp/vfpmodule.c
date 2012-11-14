@@ -10,15 +10,18 @@
  */
 #include <linux/module.h>
 #include <linux/types.h>
+#include <linux/cpu.h>
 #include <linux/kernel.h>
+#include <linux/notifier.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
+#include <linux/smp.h>
 #include <linux/init.h>
-#include <linux/uaccess.h>
-#include <linux/user.h>
 
+#include <asm/cputype.h>
 #include <asm/thread_notify.h>
 #include <asm/vfp.h>
+#include <asm/cpu_pm.h>
 
 #include "vfpinstr.h"
 #include "vfp.h"
@@ -76,6 +79,14 @@ static void vfp_thread_exit(struct thread_info *thread)
 	put_cpu();
 }
 
+static void vfp_thread_copy(struct thread_info *thread)
+{
+	struct thread_info *parent = current_thread_info();
+
+	vfp_sync_hwstate(parent);
+	thread->vfpstate = parent->vfpstate;
+}
+
 /*
  * When this function is called with the following 'cmd's, the following
  * is true while this function is being run:
@@ -102,12 +113,17 @@ static void vfp_thread_exit(struct thread_info *thread)
 static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 {
 	struct thread_info *thread = v;
+	u32 fpexc;
+#ifdef CONFIG_SMP
+	unsigned int cpu;
+#endif
 
-	if (likely(cmd == THREAD_NOTIFY_SWITCH)) {
-		u32 fpexc = fmrx(FPEXC);
+	switch (cmd) {
+	case THREAD_NOTIFY_SWITCH:
+		fpexc = fmrx(FPEXC);
 
 #ifdef CONFIG_SMP
-		unsigned int cpu = thread->cpu;
+		cpu = thread->cpu;
 
 		/*
 		 * On SMP, if VFP is enabled, save the old state in
@@ -132,13 +148,20 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		 * old state.
 		 */
 		fmxr(FPEXC, fpexc & ~FPEXC_EN);
-		return NOTIFY_DONE;
-	}
+		break;
 
-	if (cmd == THREAD_NOTIFY_FLUSH)
+	case THREAD_NOTIFY_FLUSH:
 		vfp_thread_flush(thread);
-	else
+		break;
+
+	case THREAD_NOTIFY_EXIT:
 		vfp_thread_exit(thread);
+		break;
+
+	case THREAD_NOTIFY_COPY:
+		vfp_thread_copy(thread);
+		break;
+	}
 
 	return NOTIFY_DONE;
 }
@@ -147,11 +170,40 @@ static struct notifier_block vfp_notifier_block = {
 	.notifier_call	= vfp_notifier,
 };
 
+static int vfp_cpu_pm_notifier(struct notifier_block *self, unsigned long cmd,
+	void *v)
+{
+	u32 fpexc = fmrx(FPEXC);
+	unsigned int cpu = smp_processor_id();
+
+	switch (cmd) {
+	case CPU_PM_ENTER:
+		if (last_VFP_context[cpu]) {
+			fmxr(FPEXC, fpexc | FPEXC_EN);
+			vfp_save_state(last_VFP_context[cpu], fpexc);
+			/* force a reload when coming back from idle */
+			last_VFP_context[cpu] = NULL;
+			fmxr(FPEXC, fpexc & ~FPEXC_EN);
+		}
+		break;
+	case CPU_PM_ENTER_FAILED:
+	case CPU_PM_EXIT:
+		/* make sure VFP is disabled when leaving idle */
+		fmxr(FPEXC, fpexc & ~FPEXC_EN);
+		break;
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block vfp_cpu_pm_notifier_block = {
+	.notifier_call = vfp_cpu_pm_notifier,
+};
+
 /*
  * Raise a SIGFPE for the current process.
  * sicode describes the signal being raised.
  */
-void vfp_raise_sigfpe(unsigned int sicode, struct pt_regs *regs)
+static void vfp_raise_sigfpe(unsigned int sicode, struct pt_regs *regs)
 {
 	siginfo_t info;
 
@@ -199,10 +251,13 @@ static void vfp_raise_exceptions(u32 exceptions, u32 inst, u32 fpscr, struct pt_
 	}
 
 	/*
-	 * Update the FPSCR with the additional exception flags.
+	 * If any of the status flags are set, update the FPSCR.
 	 * Comparison instructions always return at least one of
 	 * these flags set.
 	 */
+	if (exceptions & (FPSCR_N|FPSCR_Z|FPSCR_C|FPSCR_V))
+		fpscr &= ~(FPSCR_N|FPSCR_Z|FPSCR_C|FPSCR_V);
+
 	fpscr |= exceptions;
 
 	fmxr(FPSCR, fpscr);
@@ -380,17 +435,23 @@ static int vfp_pm_suspend(struct sys_device *dev, pm_message_t state)
 	struct thread_info *ti = current_thread_info();
 	u32 fpexc = fmrx(FPEXC);
 
+	/* If lazy disable, re-enable the VFP ready for it to be saved */
+	if (last_VFP_context[ti->cpu] != &ti->vfpstate) {
+		fpexc |= FPEXC_EN;
+		fmxr(FPEXC, fpexc);
+	}
+
 	/* if vfp is on, then save state for resumption */
 	if (fpexc & FPEXC_EN) {
 		printk(KERN_DEBUG "%s: saving vfp state\n", __func__);
 		vfp_save_state(&ti->vfpstate, fpexc);
 
 		/* disable, just in case */
-		fmxr(FPEXC, fpexc & ~FPEXC_EN);
+		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
 	}
 
 	/* clear any information we had about last context state */
-	last_VFP_context[ti->cpu] = NULL;
+	memset(last_VFP_context, 0, sizeof(last_VFP_context));
 
 	return 0;
 }
@@ -483,103 +544,26 @@ void vfp_flush_hwstate(struct thread_info *thread)
 }
 
 /*
- * Save the current VFP state into the provided structures and prepare
- * for entry into a new function (signal handler).
+ * VFP hardware can lose all context when a CPU goes offline.
+ * As we will be running in SMP mode with CPU hotplug, we will save the
+ * hardware state at every thread switch.  We clear our held state when
+ * a CPU has been killed, indicating that the VFP hardware doesn't contain
+ * a threads VFP state.  When a CPU starts up, we re-enable access to the
+ * VFP hardware.
+ *
+ * Both CPU_DYING and CPU_STARTING are called on the CPU which
+ * is being offlined/onlined.
  */
-int vfp_preserve_user_hwstate(struct user_vfp __user *ufp,
-			      struct user_vfp_exc __user *ufp_exc)
+static int vfp_hotplug(struct notifier_block *b, unsigned long action,
+	void *hcpu)
 {
-	struct thread_info *thread = current_thread_info();
-	struct vfp_hard_struct *hwstate = &thread->vfpstate.hard;
-	int err = 0;
-
-	/* Ensure that the saved hwstate is up-to-date. */
-	vfp_sync_hwstate(thread);
-
-	/*
-	 * Copy the floating point registers. There can be unused
-	 * registers see asm/hwcap.h for details.
-	 */
-	err |= __copy_to_user(&ufp->fpregs, &hwstate->fpregs,
-			      sizeof(hwstate->fpregs));
-	/*
-	 * Copy the status and control register.
-	 */
-	__put_user_error(hwstate->fpscr, &ufp->fpscr, err);
-
-	/*
-	 * Copy the exception registers.
-	 */
-	__put_user_error(hwstate->fpexc, &ufp_exc->fpexc, err);
-	__put_user_error(hwstate->fpinst, &ufp_exc->fpinst, err);
-	__put_user_error(hwstate->fpinst2, &ufp_exc->fpinst2, err);
-
-	if (err)
-		return -EFAULT;
-
-	/* Ensure that VFP is disabled. */
-	vfp_flush_hwstate(thread);
-
-	/*
-	 * As per the PCS, clear the length and stride bits before entry
-	 * to the signal handler.
-	 */
-	hwstate->fpscr &= ~(FPSCR_LENGTH_MASK | FPSCR_STRIDE_MASK);
-
-	/*
-	 * Disable VFP in the hwstate so that we can detect if it was
-	 * used by the signal handler.
-	 */
-	hwstate->fpexc &= ~FPEXC_EN;
-	return 0;
+	if (action == CPU_DYING || action == CPU_DYING_FROZEN) {
+		unsigned int cpu = (long)hcpu;
+		last_VFP_context[cpu] = NULL;
+	} else if (action == CPU_STARTING || action == CPU_STARTING_FROZEN)
+		vfp_enable(NULL);
+	return NOTIFY_OK;
 }
-
-/* Sanitise and restore the current VFP state from the provided structures. */
-int vfp_restore_user_hwstate(struct user_vfp __user *ufp,
-			     struct user_vfp_exc __user *ufp_exc)
-{
-	struct thread_info *thread = current_thread_info();
-	struct vfp_hard_struct *hwstate = &thread->vfpstate.hard;
-	unsigned long fpexc;
-	int err = 0;
-
-	/*
-	 * If VFP has been used, then disable it to avoid corrupting
-	 * the new thread state.
-	 */
-	if (hwstate->fpexc & FPEXC_EN)
-		vfp_flush_hwstate(thread);
-
-	/*
-	 * Copy the floating point registers. There can be unused
-	 * registers see asm/hwcap.h for details.
-	 */
-	err |= __copy_from_user(&hwstate->fpregs, &ufp->fpregs,
-				sizeof(hwstate->fpregs));
-	/*
-	 * Copy the status and control register.
-	 */
-	__get_user_error(hwstate->fpscr, &ufp->fpscr, err);
-
-	/*
-	 * Sanitise and restore the exception registers.
-	 */
-	__get_user_error(fpexc, &ufp_exc->fpexc, err);
-
-	/* Ensure the VFP is enabled. */
-	fpexc |= FPEXC_EN;
-
-	/* Ensure FPINST2 is invalid and the exception flag is cleared. */
-	fpexc &= ~(FPEXC_EX | FPEXC_FP2V);
-	hwstate->fpexc = fpexc;
-
-	__get_user_error(hwstate->fpinst, &ufp_exc->fpinst, err);
-	__get_user_error(hwstate->fpinst2, &ufp_exc->fpinst2, err);
-
-	return err ? -EFAULT : 0;
-}
-
-#include <linux/smp.h>
 
 /*
  * VFP support code initialisation.
@@ -588,9 +572,7 @@ static int __init vfp_init(void)
 {
 	unsigned int vfpsid;
 	unsigned int cpu_arch = cpu_architecture();
-#ifdef CONFIG_SMP
-	preempt_disable();
-#endif
+
 	if (cpu_arch >= CPU_ARCH_ARMv6)
 		vfp_enable(NULL);
 
@@ -604,9 +586,6 @@ static int __init vfp_init(void)
 	vfpsid = fmrx(FPSID);
 	barrier();
 	vfp_vector = vfp_null_entry;
-#ifdef CONFIG_SMP
-	preempt_enable();
-#endif
 
 	printk(KERN_INFO "VFP support v0.3: ");
 	if (VFP_arch)
@@ -614,7 +593,9 @@ static int __init vfp_init(void)
 	else if (vfpsid & FPSID_NODOUBLE) {
 		printk("no double precision support\n");
 	} else {
-		on_each_cpu(vfp_enable, NULL, 1);
+		hotcpu_notifier(vfp_hotplug, 0);
+
+		smp_call_function(vfp_enable, NULL, 1);
 
 		VFP_arch = (vfpsid & FPSID_ARCH_MASK) >> FPSID_ARCH_BIT;  /* Extract the architecture version */
 		printk("implementor %02x architecture %d part %02x variant %x rev %x\n",
@@ -627,6 +608,7 @@ static int __init vfp_init(void)
 		vfp_vector = vfp_support_entry;
 
 		thread_register_notifier(&vfp_notifier_block);
+		cpu_pm_register_notifier(&vfp_cpu_pm_notifier_block);
 		vfp_pm_init();
 
 		/*
@@ -650,10 +632,13 @@ static int __init vfp_init(void)
 		/*
 		 * Check for the presence of the Advanced SIMD
 		 * load/store instructions, integer and single
-		 * precision floating point operations.
+		 * precision floating point operations. Only check
+		 * for NEON if the hardware has the MVFR registers.
 		 */
-		if ((fmrx(MVFR1) & 0x000fff00) == 0x00011100)
-			elf_hwcap |= HWCAP_NEON;
+		if ((read_cpuid_id() & 0x000f0000) == 0x000f0000) {
+			if ((fmrx(MVFR1) & 0x000fff00) == 0x00011100)
+				elf_hwcap |= HWCAP_NEON;
+		}
 #endif
 	}
 	return 0;

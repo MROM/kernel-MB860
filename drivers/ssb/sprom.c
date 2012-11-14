@@ -14,6 +14,7 @@
 #include "ssb_private.h"
 
 #include <linux/ctype.h>
+#include <linux/slab.h>
 
 
 static const struct ssb_sprom *fallback_sprom;
@@ -102,6 +103,7 @@ ssize_t ssb_attr_sprom_store(struct ssb_bus *bus,
 	u16 *sprom;
 	int res = 0, err = -ENOMEM;
 	size_t sprom_size_words = bus->sprom_size;
+	struct ssb_freeze_context freeze;
 
 	sprom = kcalloc(bus->sprom_size, sizeof(u16), GFP_KERNEL);
 	if (!sprom)
@@ -123,18 +125,13 @@ ssize_t ssb_attr_sprom_store(struct ssb_bus *bus,
 	err = -ERESTARTSYS;
 	if (mutex_lock_interruptible(&bus->sprom_mutex))
 		goto out_kfree;
-	err = ssb_devices_freeze(bus);
-	if (err == -EOPNOTSUPP) {
-		ssb_printk(KERN_ERR PFX "SPROM write: Could not freeze devices. "
-			   "No suspend support. Is CONFIG_PM enabled?\n");
-		goto out_unlock;
-	}
+	err = ssb_devices_freeze(bus, &freeze);
 	if (err) {
 		ssb_printk(KERN_ERR PFX "SPROM write: Could not freeze all devices\n");
 		goto out_unlock;
 	}
 	res = sprom_write(bus, sprom);
-	err = ssb_devices_thaw(bus);
+	err = ssb_devices_thaw(&freeze);
 	if (err)
 		ssb_printk(KERN_ERR PFX "SPROM write: Could not thaw all devices\n");
 out_unlock:
@@ -188,7 +185,7 @@ bool ssb_is_sprom_available(struct ssb_bus *bus)
 	/* this routine differs from specs as we do not access SPROM directly
 	   on PCMCIA */
 	if (bus->bustype == SSB_BUSTYPE_PCI &&
-	    bus->chipco.dev &&	/* can be unavailible! */
+	    bus->chipco.dev &&	/* can be unavailable! */
 	    bus->chipco.dev->id.revision >= 31)
 		return bus->chipco.capabilities & SSB_CHIPCO_CAP_SPROM;
 

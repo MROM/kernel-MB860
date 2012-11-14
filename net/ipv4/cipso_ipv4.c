@@ -9,7 +9,7 @@
  *
  * The CIPSO draft specification can be found in the kernel's Documentation
  * directory as well as the following URL:
- *   http://netlabel.sourceforge.net/files/draft-ietf-cipso-ipsecurity-01.txt
+ *   http://tools.ietf.org/id/draft-ietf-cipso-ipsecurity-01.txt
  * The FIPS-188 specification can be found at the following URL:
  *   http://www.itl.nist.gov/fipspubs/fip188.htm
  *
@@ -44,6 +44,7 @@
 #include <linux/string.h>
 #include <linux/jhash.h>
 #include <linux/audit.h>
+#include <linux/slab.h>
 #include <net/ip.h>
 #include <net/icmp.h>
 #include <net/tcp.h>
@@ -111,7 +112,7 @@ int cipso_v4_rbm_strictvalid = 1;
 /* The maximum number of category ranges permitted in the ranged category tag
  * (tag #5).  You may note that the IETF draft states that the maximum number
  * of category ranges is 7, but if the low end of the last category range is
- * zero then it is possibile to fit 8 category ranges because the zero should
+ * zero then it is possible to fit 8 category ranges because the zero should
  * be omitted. */
 #define CIPSO_V4_TAG_RNG_CAT_MAX      8
 
@@ -289,8 +290,6 @@ void cipso_v4_cache_invalidate(void)
 		cipso_v4_cache[iter].size = 0;
 		spin_unlock_bh(&cipso_v4_cache[iter].lock);
 	}
-
-	return;
 }
 
 /**
@@ -439,7 +438,7 @@ cache_add_failure:
  *
  * Description:
  * Search the DOI definition list for a DOI definition with a DOI value that
- * matches @doi.  The caller is responsibile for calling rcu_read_[un]lock().
+ * matches @doi.  The caller is responsible for calling rcu_read_[un]lock().
  * Returns a pointer to the DOI definition on success and NULL on failure.
  */
 static struct cipso_v4_doi *cipso_v4_doi_search(u32 doi)
@@ -1294,7 +1293,7 @@ static int cipso_v4_gentag_rbm(const struct cipso_v4_doi *doi_def,
 			return ret_val;
 
 		/* This will send packets using the "optimized" format when
-		 * possibile as specified in  section 3.4.2.6 of the
+		 * possible as specified in  section 3.4.2.6 of the
 		 * CIPSO draft. */
 		if (cipso_v4_rbm_optfmt && ret_val > 0 && ret_val <= 10)
 			tag_len = 14;
@@ -1726,10 +1725,8 @@ int cipso_v4_validate(const struct sk_buff *skb, unsigned char **option)
 		case CIPSO_V4_TAG_LOCAL:
 			/* This is a non-standard tag that we only allow for
 			 * local connections, so if the incoming interface is
-			 * not the loopback device drop the packet. Further,
-			 * there is no legitimate reason for setting this from
-			 * userspace so reject it if skb is NULL. */
-			if (skb == NULL || !(skb->dev->flags & IFF_LOOPBACK)) {
+			 * not the loopback device drop the packet. */
+			if (!(skb->dev->flags & IFF_LOOPBACK)) {
 				err_offset = opt_iter;
 				goto validate_return_locked;
 			}
@@ -1755,7 +1752,7 @@ validate_return:
 }
 
 /**
- * cipso_v4_error - Send the correct reponse for a bad packet
+ * cipso_v4_error - Send the correct response for a bad packet
  * @skb: the packet
  * @error: the error code
  * @gateway: CIPSO gateway flag
@@ -2019,7 +2016,7 @@ req_setattr_failure:
  * values on failure.
  *
  */
-int cipso_v4_delopt(struct ip_options **opt_ptr)
+static int cipso_v4_delopt(struct ip_options **opt_ptr)
 {
 	int hdr_delta = 0;
 	struct ip_options *opt = *opt_ptr;

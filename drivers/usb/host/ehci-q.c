@@ -103,7 +103,7 @@ qh_update (struct ehci_hcd *ehci, struct ehci_qh *qh, struct ehci_qtd *qtd)
 	if (!(hw->hw_info1 & cpu_to_hc32(ehci, 1 << 14))) {
 		unsigned	is_out, epnum;
 
-		is_out = qh->is_out;
+		is_out = !(qtd->hw_token & cpu_to_hc32(ehci, 1 << 8));
 		epnum = (hc32_to_cpup(ehci, &hw->hw_info1) >> 8) & 0x0f;
 		if (unlikely (!usb_gettoggle (qh->dev, epnum, is_out))) {
 			hw->hw_token &= ~cpu_to_hc32(ehci, QTD_TOGGLE);
@@ -604,9 +604,11 @@ qh_urb_transaction (
 ) {
 	struct ehci_qtd		*qtd, *qtd_prev;
 	dma_addr_t		buf;
-	int			len, maxpacket;
+	int			len, this_sg_len, maxpacket;
 	int			is_input;
 	u32			token;
+	int			i;
+	struct scatterlist	*sg;
 
 	/*
 	 * URBs map to sequences of QTDs:  one logical transaction
@@ -647,7 +649,20 @@ qh_urb_transaction (
 	/*
 	 * data transfer stage:  buffer setup
 	 */
-	buf = urb->transfer_dma;
+	i = urb->num_sgs;
+	if (len > 0 && i > 0) {
+		sg = urb->sg;
+		buf = sg_dma_address(sg);
+
+		/* urb->transfer_buffer_length may be smaller than the
+		 * size of the scatterlist (or vice versa)
+		 */
+		this_sg_len = min_t(int, sg_dma_len(sg), len);
+	} else {
+		sg = NULL;
+		buf = urb->transfer_dma;
+		this_sg_len = len;
+	}
 
 	if (is_input)
 		token |= (1 /* "in" */ << 8);
@@ -663,7 +678,9 @@ qh_urb_transaction (
 	for (;;) {
 		int this_qtd_len;
 
-		this_qtd_len = qtd_fill(ehci, qtd, buf, len, token, maxpacket);
+		this_qtd_len = qtd_fill(ehci, qtd, buf, this_sg_len, token,
+				maxpacket);
+		this_sg_len -= this_qtd_len;
 		len -= this_qtd_len;
 		buf += this_qtd_len;
 
@@ -679,8 +696,13 @@ qh_urb_transaction (
 		if ((maxpacket & (this_qtd_len + (maxpacket - 1))) == 0)
 			token ^= QTD_TOGGLE;
 
-		if (likely (len <= 0))
-			break;
+		if (likely(this_sg_len <= 0)) {
+			if (--i <= 0 || len <= 0)
+				break;
+			sg = sg_next(sg);
+			buf = sg_dma_address(sg);
+			this_sg_len = min_t(int, sg_dma_len(sg), len);
+		}
 
 		qtd_prev = qtd;
 		qtd = ehci_qtd_alloc (ehci, flags);
@@ -804,6 +826,7 @@ qh_make (
 				is_input, 0,
 				hb_mult(maxp) * max_packet(maxp)));
 		qh->start = NO_FRAME;
+		qh->stamp = ehci->periodic_stamp;
 
 		if (urb->dev->speed == USB_SPEED_HIGH) {
 			qh->c_usecs = 0;
@@ -923,7 +946,6 @@ done:
 	hw = qh->hw;
 	hw->hw_info1 = cpu_to_hc32(ehci, info1);
 	hw->hw_info2 = cpu_to_hc32(ehci, info2);
-	qh->is_out = !is_input;
 	usb_settoggle (urb->dev, usb_pipeendpoint (urb->pipe), !is_input, 1);
 	qh_refresh (ehci, qh);
 	return qh;
@@ -1075,27 +1097,28 @@ submit_async (
 	struct list_head	*qtd_list,
 	gfp_t			mem_flags
 ) {
-	struct ehci_qtd		*qtd;
 	int			epnum;
 	unsigned long		flags;
 	struct ehci_qh		*qh = NULL;
 	int			rc;
 
-	qtd = list_entry (qtd_list->next, struct ehci_qtd, qtd_list);
 	epnum = urb->ep->desc.bEndpointAddress;
 
 #ifdef EHCI_URB_TRACE
-	ehci_dbg (ehci,
-		"%s %s urb %p ep%d%s len %d, qtd %p [qh %p]\n",
-		__func__, urb->dev->devpath, urb,
-		epnum & 0x0f, (epnum & USB_DIR_IN) ? "in" : "out",
-		urb->transfer_buffer_length,
-		qtd, urb->ep->hcpriv);
+	{
+		struct ehci_qtd *qtd;
+		qtd = list_entry(qtd_list->next, struct ehci_qtd, qtd_list);
+		ehci_dbg(ehci,
+			 "%s %s urb %p ep%d%s len %d, qtd %p [qh %p]\n",
+			 __func__, urb->dev->devpath, urb,
+			 epnum & 0x0f, (epnum & USB_DIR_IN) ? "in" : "out",
+			 urb->transfer_buffer_length,
+			 qtd, urb->ep->hcpriv);
+	}
 #endif
 
 	spin_lock_irqsave (&ehci->lock, flags);
-	if (unlikely(!test_bit(HCD_FLAG_HW_ACCESSIBLE,
-			       &ehci_to_hcd(ehci)->flags))) {
+	if (unlikely(!HCD_HW_ACCESSIBLE(ehci_to_hcd(ehci)))) {
 		rc = -ESHUTDOWN;
 		goto done;
 	}

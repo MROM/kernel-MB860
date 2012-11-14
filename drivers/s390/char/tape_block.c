@@ -11,10 +11,12 @@
  */
 
 #define KMSG_COMPONENT "tape"
+#define pr_fmt(fmt) KMSG_COMPONENT ": " fmt
 
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/blkdev.h>
+#include <linux/mutex.h>
 #include <linux/interrupt.h>
 #include <linux/buffer_head.h>
 #include <linux/kernel.h>
@@ -43,19 +45,17 @@
 /*
  * file operation structure for tape block frontend
  */
+static DEFINE_MUTEX(tape_block_mutex);
 static int tapeblock_open(struct block_device *, fmode_t);
 static int tapeblock_release(struct gendisk *, fmode_t);
-static int tapeblock_ioctl(struct block_device *, fmode_t, unsigned int,
-				unsigned long);
-static int tapeblock_medium_changed(struct gendisk *);
+static unsigned int tapeblock_check_events(struct gendisk *, unsigned int);
 static int tapeblock_revalidate_disk(struct gendisk *);
 
 static const struct block_device_operations tapeblock_fops = {
 	.owner		 = THIS_MODULE,
 	.open		 = tapeblock_open,
 	.release	 = tapeblock_release,
-	.locked_ioctl           = tapeblock_ioctl,
-	.media_changed   = tapeblock_medium_changed,
+	.check_events	 = tapeblock_check_events,
 	.revalidate_disk = tapeblock_revalidate_disk,
 };
 
@@ -161,7 +161,6 @@ tapeblock_requeue(struct work_struct *work) {
 
 	spin_lock_irq(&device->blk_data.request_queue_lock);
 	while (
-		!blk_queue_plugged(queue) &&
 		blk_peek_request(queue) &&
 		nr_queued < TAPEBLOCK_MIN_REQUEUE
 	) {
@@ -218,15 +217,13 @@ tapeblock_setup_device(struct tape_device * device)
 	if (!blkdat->request_queue)
 		return -ENOMEM;
 
-	elevator_exit(blkdat->request_queue->elevator);
-	rc = elevator_init(blkdat->request_queue, "noop");
+	rc = elevator_change(blkdat->request_queue, "noop");
 	if (rc)
 		goto cleanup_queue;
 
 	blk_queue_logical_block_size(blkdat->request_queue, TAPEBLOCK_HSEC_SIZE);
-	blk_queue_max_sectors(blkdat->request_queue, TAPEBLOCK_MAX_SEC);
-	blk_queue_max_phys_segments(blkdat->request_queue, -1L);
-	blk_queue_max_hw_segments(blkdat->request_queue, -1L);
+	blk_queue_max_hw_sectors(blkdat->request_queue, TAPEBLOCK_MAX_SEC);
+	blk_queue_max_segments(blkdat->request_queue, -1L);
 	blk_queue_max_segment_size(blkdat->request_queue, -1L);
 	blk_queue_segment_boundary(blkdat->request_queue, -1L);
 
@@ -239,7 +236,7 @@ tapeblock_setup_device(struct tape_device * device)
 	disk->major = tapeblock_major;
 	disk->first_minor = device->first_minor;
 	disk->fops = &tapeblock_fops;
-	disk->private_data = tape_get_device_reference(device);
+	disk->private_data = tape_get_device(device);
 	disk->queue = blkdat->request_queue;
 	set_capacity(disk, 0);
 	sprintf(disk->disk_name, "btibm%d",
@@ -247,11 +244,11 @@ tapeblock_setup_device(struct tape_device * device)
 
 	blkdat->disk = disk;
 	blkdat->medium_changed = 1;
-	blkdat->request_queue->queuedata = tape_get_device_reference(device);
+	blkdat->request_queue->queuedata = tape_get_device(device);
 
 	add_disk(disk);
 
-	tape_get_device_reference(device);
+	tape_get_device(device);
 	INIT_WORK(&blkdat->requeue_task, tapeblock_requeue);
 
 	return 0;
@@ -266,7 +263,7 @@ cleanup_queue:
 void
 tapeblock_cleanup_device(struct tape_device *device)
 {
-	flush_scheduled_work();
+	flush_work_sync(&device->blk_data.requeue_task);
 	tape_put_device(device);
 
 	if (!device->blk_data.disk) {
@@ -274,13 +271,14 @@ tapeblock_cleanup_device(struct tape_device *device)
 	}
 
 	del_gendisk(device->blk_data.disk);
-	device->blk_data.disk->private_data =
-		tape_put_device(device->blk_data.disk->private_data);
+	device->blk_data.disk->private_data = NULL;
+	tape_put_device(device);
 	put_disk(device->blk_data.disk);
 
 	device->blk_data.disk = NULL;
 cleanup_queue:
-	device->blk_data.request_queue->queuedata = tape_put_device(device);
+	device->blk_data.request_queue->queuedata = NULL;
+	tape_put_device(device);
 
 	blk_cleanup_queue(device->blk_data.request_queue);
 	device->blk_data.request_queue = NULL;
@@ -341,8 +339,8 @@ tapeblock_revalidate_disk(struct gendisk *disk)
 	return 0;
 }
 
-static int
-tapeblock_medium_changed(struct gendisk *disk)
+static unsigned int
+tapeblock_check_events(struct gendisk *disk, unsigned int clearing)
 {
 	struct tape_device *device;
 
@@ -350,7 +348,7 @@ tapeblock_medium_changed(struct gendisk *disk)
 	DBF_LH(6, "tapeblock_medium_changed(%p) = %d\n",
 		device, device->blk_data.medium_changed);
 
-	return device->blk_data.medium_changed;
+	return device->blk_data.medium_changed ? DISK_EVENT_MEDIA_CHANGE : 0;
 }
 
 /*
@@ -363,7 +361,8 @@ tapeblock_open(struct block_device *bdev, fmode_t mode)
 	struct tape_device *	device;
 	int			rc;
 
-	device = tape_get_device_reference(disk->private_data);
+	mutex_lock(&tape_block_mutex);
+	device = tape_get_device(disk->private_data);
 
 	if (device->required_tapemarks) {
 		DBF_EVENT(2, "TBLOCK: missing tapemarks\n");
@@ -386,12 +385,14 @@ tapeblock_open(struct block_device *bdev, fmode_t mode)
 	 *       is called.
 	 */
 	tape_state_set(device, TS_BLKUSE);
+	mutex_unlock(&tape_block_mutex);
 	return 0;
 
 release:
 	tape_release(device);
  put_device:
 	tape_put_device(device);
+	mutex_unlock(&tape_block_mutex);
 	return rc;
 }
 
@@ -405,48 +406,14 @@ static int
 tapeblock_release(struct gendisk *disk, fmode_t mode)
 {
 	struct tape_device *device = disk->private_data;
-
+ 
+	mutex_lock(&tape_block_mutex);
 	tape_state_set(device, TS_IN_USE);
 	tape_release(device);
 	tape_put_device(device);
+	mutex_unlock(&tape_block_mutex);
 
 	return 0;
-}
-
-/*
- * Support of some generic block device IOCTLs.
- */
-static int
-tapeblock_ioctl(
-	struct block_device *	bdev,
-	fmode_t			mode,
-	unsigned int		command,
-	unsigned long		arg
-) {
-	int rc;
-	int minor;
-	struct gendisk *disk = bdev->bd_disk;
-	struct tape_device *device;
-
-	rc     = 0;
-	BUG_ON(!disk);
-	device = disk->private_data;
-	BUG_ON(!device);
-	minor  = MINOR(bdev->bd_dev);
-
-	DBF_LH(6, "tapeblock_ioctl(0x%0x)\n", command);
-	DBF_LH(6, "device = %d:%d\n", tapeblock_major, minor);
-
-	switch (command) {
-		/* Refuse some IOCTL calls without complaining (mount). */
-		case 0x5310:		/* CDROMMULTISESSION */
-			rc = -EINVAL;
-			break;
-		default:
-			rc = -EINVAL;
-	}
-
-	return rc;
 }
 
 /*

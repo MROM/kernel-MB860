@@ -29,9 +29,15 @@
  */
 
 extern unsigned char boot_cpu_id;
+extern volatile unsigned long cpu_callin_map[NR_CPUS];
+extern cpumask_t smp_commenced_mask;
+extern struct linux_prom_registers smp_penguin_ctable;
 
 typedef void (*smpfunc_t)(unsigned long, unsigned long, unsigned long,
 		       unsigned long, unsigned long);
+
+void cpu_panic(void);
+extern void smp4m_irq_rotate(int cpu);
 
 /*
  *	General functions that each host system must provide.
@@ -103,6 +109,15 @@ static inline int hard_smp4d_processor_id(void)
 
 	__asm__ __volatile__("lda [%%g0] %1, %0\n\t" :
 			     "=&r" (cpuid) : "i" (ASI_M_VIKING_TMP1));
+	return cpuid;
+}
+
+extern inline int hard_smpleon_processor_id(void)
+{
+	int cpuid;
+	__asm__ __volatile__("rd     %%asr17,%0\n\t"
+			     "srl    %0,28,%0" :
+			     "=&r" (cpuid) : );
 	return cpuid;
 }
 

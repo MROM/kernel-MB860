@@ -24,41 +24,43 @@
 #define __NVHOST_HWCTX_H
 
 #include <linux/string.h>
-#include <linux/nvhost.h>
-#include <linux/nvmap.h>
+#include <linux/kref.h>
+
+#include <mach/nvhost.h>
+#include <mach/nvmap.h>
 
 struct nvhost_channel;
 
 struct nvhost_hwctx {
+	struct kref ref;
+
 	struct nvhost_channel *channel;
-	u32 last_access_id;
-	u32 last_access_value;
 	bool valid;
 
-	struct nvmap_handle *save;
+	struct nvmap_handle_ref *save;
 	u32 save_phys;
 	u32 save_size;
 	u32 save_incrs;
 	void *save_cpu_data;
 
-	struct nvmap_handle *restore;
+	struct nvmap_handle_ref *restore;
 	u32 restore_phys;
 	u32 restore_size;
 	u32 restore_incrs;
 };
 
 struct nvhost_hwctx_handler {
-	int (*init) (struct nvhost_hwctx *ctx);
-	void (*deinit) (struct nvhost_hwctx *ctx);
+	struct nvhost_hwctx * (*alloc) (struct nvhost_channel *ch);
+	void (*get) (struct nvhost_hwctx *ctx);
+	void (*put) (struct nvhost_hwctx *ctx);
 	void (*save_service) (struct nvhost_hwctx *ctx);
 };
 
 int nvhost_3dctx_handler_init(struct nvhost_hwctx_handler *h);
 int nvhost_mpectx_handler_init(struct nvhost_hwctx_handler *h);
 
-static inline int nvhost_hwctx_handler_init(
-	struct nvhost_hwctx_handler *h,
-	const char *module)
+static inline int nvhost_hwctx_handler_init(struct nvhost_hwctx_handler *h,
+                                            const char *module)
 {
 	if (strcmp(module, "gr3d") == 0)
 		return nvhost_3dctx_handler_init(h);

@@ -4,7 +4,7 @@
 #
 MODULE_NAME = ts27010mux
 
-obj-$(CONFIG_MOT_FEAT_TS27010MUX) += $(MODULE_NAME).o
+obj-$(CONFIG_TS27010MUX) += $(MODULE_NAME).o
 
 $(MODULE_NAME)-objs := ts27010_mux.o \
 			ts27010_tty.o \

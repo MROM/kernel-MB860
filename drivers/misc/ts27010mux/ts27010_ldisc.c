@@ -1,6 +1,7 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/tty.h>
+#include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/poll.h>
@@ -31,7 +32,8 @@ int ts27010_ldisc_send(struct tty_struct *tty, u8 *data, int len)
 	struct ts27010_ldisc_data *ts = 0;
 
 	if (tty->disc_data == NULL) {
-		pr_err("\n %s try to send mux command while ttyS is closed. \n", __func__);
+		pr_err("\n %s try to send mux command while	\
+			ttyS is closed.\n", __func__);
 		return len;
 	} else
 		ts = tty->disc_data;
@@ -68,7 +70,6 @@ static int ts27010_ldisc_open(struct tty_struct *tty)
 
 	mutex_init(&ts->send_lock);
 	spin_lock_init(&ts->recv_lock);
-
 	tty->disc_data = ts;
 
 	/* TODO: goes away with clean tty interface */
@@ -94,6 +95,12 @@ static void ts27010_ldisc_close(struct tty_struct *tty)
 {
 	struct ts27010_ldisc_data *ts = tty->disc_data;
 
+	if (!ts)
+		return;
+
+	cancel_work_sync(&ts->recv_work);
+
+	tty->disc_data = NULL;
 	/* TODO: goes away with clean tty interface */
 	ts27010mux_tty = NULL;
 	/* TODO: find some way of dealing with ts_data freeing safely */
@@ -153,7 +160,18 @@ static unsigned int ts27010_ldisc_poll(struct tty_struct *tty,
 				       struct file *file,
 				       poll_table *wait)
 {
-	return 0;
+	unsigned int mask = 0;
+
+	poll_wait(file, &tty->read_wait, wait);
+	poll_wait(file, &tty->write_wait, wait);
+	if (tty_hung_up_p(file))
+		mask |= POLLHUP;
+	if (!tty_is_writelocked(tty) && tty_write_room(tty) > 0)
+		mask |= POLLOUT | POLLWRNORM;
+
+	return mask;
+
+
 }
 
 /*
@@ -184,7 +202,7 @@ static void ts27010_ldisc_receive(struct tty_struct *tty,
 
 static void ts27010_ldisc_wakeup(struct tty_struct *tty)
 {
-	pr_info(" Enter into ts27010mux_tty_wakeup. \n");
+	pr_info(" Enter into ts27010mux_tty_wakeup\n");
 }
 
 
@@ -208,7 +226,7 @@ int ts27010_ldisc_init(void)
 {
 	int err;
 
-	err = tty_register_ldisc(N_TS2710, &ts27010_ldisc);
+	err = tty_register_ldisc(N_GSM0710, &ts27010_ldisc);
 	if (err < 0)
 		pr_err("ts27010: unable to register line discipline\n");
 
@@ -217,5 +235,5 @@ int ts27010_ldisc_init(void)
 
 void ts27010_ldisc_remove(void)
 {
-	tty_unregister_ldisc(N_TS2710);
+	tty_unregister_ldisc(N_GSM0710);
 }

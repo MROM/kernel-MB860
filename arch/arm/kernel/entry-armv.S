@@ -16,48 +16,32 @@
  */
 
 #include <asm/memory.h>
-#include <asm/glue.h>
+#include <asm/glue-df.h>
+#include <asm/glue-pf.h>
 #include <asm/vfpmacros.h>
 #include <mach/entry-macro.S>
 #include <asm/thread_notify.h>
 #include <asm/unwind.h>
 #include <asm/unistd.h>
+#include <asm/tls.h>
 
 #include "entry-header.S"
+#include <asm/entry-macro-multi.S>
 
 /*
  * Interrupt handling.  Preserves r7, r8, r9
  */
 	.macro	irq_handler
-	get_irqnr_preamble r5, lr
-1:	get_irqnr_and_base r0, r6, r5, lr
-	movne	r1, sp
-	@
-	@ routine called with r0 = irq number, r1 = struct pt_regs *
-	@
-	adrne	lr, BSYM(1b)
-	bne	asm_do_IRQ
-
-#ifdef CONFIG_SMP
-	/*
-	 * XXX
-	 *
-	 * this macro assumes that irqstat (r6) and base (r5) are
-	 * preserved from get_irqnr_and_base above
-	 */
-	test_for_ipi r0, r6, r5, lr
-	movne	r1, sp
-	adrne	lr, BSYM(1b)
-	bne	do_IPI
-
-#ifdef CONFIG_LOCAL_TIMERS
-	test_for_ltirq r0, r6, r5, lr
-	movne	r0, sp
-	adrne	lr, BSYM(1b)
-	bne	do_local_timer
+#ifdef CONFIG_MULTI_IRQ_HANDLER
+	ldr	r5, =handle_arch_irq
+	mov	r0, sp
+	ldr	r5, [r5]
+	adr	lr, BSYM(9997f)
+	teq	r5, #0
+	movne	pc, r5
 #endif
-#endif
-
+	arch_irq_handler_default
+9997:
 	.endm
 
 #ifdef CONFIG_KPROBES
@@ -87,13 +71,6 @@ __dabt_invalid:
 	inv_entry BAD_DATA
 	b	common_invalid
 ENDPROC(__dabt_invalid)
-
-#ifdef CONFIG_NON_NESTED_FIQ
-__fiq_invalid:
-	inv_entry BAD_FIQ
-	b	common_invalid
-ENDPROC(__fiq_invalid)
-#endif
 
 __irq_invalid:
 	inv_entry BAD_IRQ
@@ -169,8 +146,6 @@ ENDPROC(__und_invalid)
 	@  r4 - orig_r0 (see pt_regs definition in ptrace.h)
 	@
 	stmia	r5, {r0 - r4}
-
-	asm_trace_hardirqs_off
 	.endm
 
 	.align	5
@@ -204,6 +179,7 @@ __dabt_svc:
 	@
 	@ set desired IRQ state, then call main handler
 	@
+	debug_entry r1
 	msr	cpsr_c, r9
 	mov	r2, sp
 	bl	do_DataAbort
@@ -211,7 +187,7 @@ __dabt_svc:
 	@
 	@ IRQs off again before pulling preserved data off the stack
 	@
-	disable_irq
+	disable_irq_notrace
 
 	@
 	@ restore SPSR and restart the instruction
@@ -221,22 +197,13 @@ __dabt_svc:
  UNWIND(.fnend		)
 ENDPROC(__dabt_svc)
 
-#ifdef CONFIG_NON_NESTED_FIQ
-	.align	5
-__fiq_svc:
-	disable_irq
-	svc_entry
-	mov 	r0, sp
-	bl 	asm_do_FIQ
-	ldr     r0, [sp, #S_PSR]                @ irqs are already disabled
-	msr     spsr_cxsf, r0
-	ldmia   sp, {r0 - pc}^                  @ load r0 - pc, cpsr
-ENDPROC(__fiq_svc)
-#endif
 	.align	5
 __irq_svc:
 	svc_entry
 
+#ifdef CONFIG_TRACE_IRQFLAGS
+	bl	trace_hardirqs_off
+#endif
 #ifdef CONFIG_PREEMPT
 	get_thread_info tsk
 	ldr	r8, [tsk, #TI_PREEMPT]		@ get preempt count
@@ -310,7 +277,7 @@ __und_svc:
 	@
 	@ IRQs off again before pulling preserved data off the stack
 	@
-1:	disable_irq
+1:	disable_irq_notrace
 
 	@
 	@ restore SPSR and restart the instruction
@@ -339,6 +306,7 @@ __pabt_svc:
 #else
 	bl	CPU_PABORT_HANDLER
 #endif
+	debug_entry r1
 	msr	cpsr_c, r9			@ Maybe enable interrupts
 	mov	r2, sp				@ regs
 	bl	do_PrefetchAbort		@ call abort handler
@@ -346,7 +314,7 @@ __pabt_svc:
 	@
 	@ IRQs off again before pulling preserved data off the stack
 	@
-	disable_irq
+	disable_irq_notrace
 
 	@
 	@ restore SPSR and restart the instruction
@@ -412,8 +380,6 @@ ENDPROC(__pabt_svc)
 	@ Clear FP to mark the first stack frame
 	@
 	zero_fp
-
-	asm_trace_hardirqs_off
 	.endm
 
 	.macro	kuser_cmpxchg_check
@@ -456,6 +422,7 @@ __dabt_usr:
 	@
 	@ IRQs on, then call the main handler
 	@
+	debug_entry r1
 	enable_irq
 	mov	r2, sp
 	adr	lr, BSYM(ret_from_exception)
@@ -464,20 +431,6 @@ __dabt_usr:
 ENDPROC(__dabt_usr)
 
 	.align	5
-#ifdef CONFIG_NON_NESTED_FIQ
-__fiq_usr:
-	disable_irq
-	usr_entry
-	kuser_cmpxchg_check
-	mov 	r0, sp
-	bl 	asm_do_FIQ
-	get_thread_info tsk
-	mov 	why, #0
-	b   	ret_to_user
-ENDPROC(__fiq_usr)
-
-	.align	5
-#endif
 __irq_usr:
 	usr_entry
 	kuser_cmpxchg_check
@@ -497,9 +450,6 @@ __irq_usr:
  ARM(	strne	r0, [r0, -r0]	)
  THUMB(	movne	r0, #0		)
  THUMB(	strne	r0, [r0]	)
-#endif
-#ifdef CONFIG_TRACE_IRQFLAGS
-	bl	trace_hardirqs_on
 #endif
 
 	mov	why, #0
@@ -542,7 +492,7 @@ __und_usr:
 	blo	__und_usr_unknown
 3:	ldrht	r0, [r4]
 	add	r2, r2, #2			@ r2 is PC + 2, make it PC + 4
-	orr	r0, r0, r5, lsl #16
+	orr    	r0, r0, r5, lsl #16
 #else
 	b	__und_usr_unknown
 #endif
@@ -556,16 +506,16 @@ ENDPROC(__und_usr)
 /*
  * The out of line fixup for the ldrt above.
  */
-	.section .fixup, "ax"
+	.pushsection .fixup, "ax"
 4:	mov	pc, r9
-	.previous
-	.section __ex_table,"a"
+	.popsection
+	.pushsection __ex_table,"a"
 	.long	1b, 4b
 #if __LINUX_ARM_ARCH__ >= 7
 	.long	2b, 4b
 	.long	3b, 4b
 #endif
-	.previous
+	.popsection
 
 /*
  * Check whether the instruction is a co-processor instruction.
@@ -709,10 +659,10 @@ do_fpe:
  *  lr  = unrecognised FP instruction return address
  */
 
-	.data
+	.pushsection .data
 ENTRY(fp_enter)
 	.word	no_fp
-	.previous
+	.popsection
 
 ENTRY(no_fp)
 	mov	pc, lr
@@ -737,6 +687,7 @@ __pabt_usr:
 #else
 	bl	CPU_PABORT_HANDLER
 #endif
+	debug_entry r1
 	enable_irq				@ Enable interrupts
 	mov	r2, sp				@ regs
 	bl	do_PrefetchAbort		@ call abort handler
@@ -769,20 +720,16 @@ ENTRY(__switch_to)
  THUMB(	stmia	ip!, {r4 - sl, fp}	   )	@ Store most regs on stack
  THUMB(	str	sp, [ip], #4		   )
  THUMB(	str	lr, [ip], #4		   )
-#ifdef CONFIG_MMU
+#ifdef CONFIG_CPU_USE_DOMAINS
 	ldr	r6, [r2, #TI_CPU_DOMAIN]
 #endif
-#if defined(CONFIG_HAS_TLS_REG)
-#if defined(CONFIG_TEGRA_ERRATA_657451)
-	and	r4, r3, #(1<<20)
-	orr	r3, r3, r4, lsr #20
+	set_tls	r3, r4, r5
+#if defined(CONFIG_CC_STACKPROTECTOR) && !defined(CONFIG_SMP)
+	ldr	r7, [r2, #TI_TASK]
+	ldr	r8, =__stack_chk_guard
+	ldr	r7, [r7, #TSK_STACK_CANARY]
 #endif
-	mcr	p15, 0, r3, c13, c0, 3		@ set TLS register
-#elif !defined(CONFIG_TLS_REG_EMUL)
-	mov	r4, #0xffff0fff
-	str	r3, [r4, #-15]			@ TLS val at 0xffff0ff0
-#endif
-#ifdef CONFIG_MMU
+#ifdef CONFIG_CPU_USE_DOMAINS
 	mcr	p15, 0, r6, c3, c0, 0		@ Set domain register
 #endif
 	mov	r5, r0
@@ -790,6 +737,9 @@ ENTRY(__switch_to)
 	ldr	r0, =thread_notify_head
 	mov	r1, #THREAD_NOTIFY_SWITCH
 	bl	atomic_notifier_call_chain
+#if defined(CONFIG_CC_STACKPROTECTOR) && !defined(CONFIG_SMP)
+	str	r7, [r8]
+#endif
  THUMB(	mov	ip, r4			   )
 	mov	r0, r5
  ARM(	ldmia	r4, {r4 - sl, fp, sp, pc}  )	@ Load all regs saved previously
@@ -877,7 +827,7 @@ __kuser_helper_start:
  */
 
 __kuser_memory_barrier:				@ 0xffff0fa0
-	smp_dmb
+	smp_dmb	arm
 	usr_ret	lr
 
 	.align	5
@@ -994,7 +944,7 @@ kuser_cmpxchg_fixup:
 
 #else
 
-	smp_dmb
+	smp_dmb	arm
 1:	ldrex	r3, [r2]
 	subs	r3, r3, r0
 	strexeq	r3, r1, [r2]
@@ -1002,11 +952,8 @@ kuser_cmpxchg_fixup:
 	beq	1b
 	rsbs	r0, r3, #0
 	/* beware -- each __kuser slot must be 8 instructions max */
-#ifdef CONFIG_SMP
-	b	__kuser_memory_barrier
-#else
-	usr_ret	lr
-#endif
+	ALT_SMP(b	__kuser_memory_barrier)
+	ALT_UP(usr_ret	lr)
 
 #endif
 
@@ -1046,25 +993,12 @@ kuser_cmpxchg_fixup:
  */
 
 __kuser_get_tls:				@ 0xffff0fe0
-
-#if !defined(CONFIG_HAS_TLS_REG) && !defined(CONFIG_TLS_REG_EMUL)
-	ldr	r0, [pc, #(16 - 8)]		@ TLS stored at 0xffff0ff0
-#else
-	mrc	p15, 0, r0, c13, c0, 3		@ read TLS register
-#if defined(CONFIG_TEGRA_ERRATA_657451)
-	bfi	r0, r0, #20, #1
-	bic	r0, r0, #1
-#endif
-#endif
+	ldr	r0, [pc, #(16 - 8)]	@ read TLS, set in kuser_get_tls_init
 	usr_ret	lr
-
-#if defined(CONFIG_TEGRA_ERRATA_657451)
-	.rep	3
-#else
-	.rep	5
-#endif
-	.word	0			@ pad up to __kuser_helper_version
-	.endr
+	mrc	p15, 0, r0, c13, c0, 3	@ 0xffff0fe8 hardware TLS code
+	.rep	4
+	.word	0			@ 0xffff0ff0 software TLS value, then
+	.endr				@ pad up to __kuser_helper_version
 
 /*
  * Reference declaration:
@@ -1163,26 +1097,6 @@ __stubs_start:
 	.long	__irq_invalid			@  e
 	.long	__irq_invalid			@  f
 
-#ifdef CONFIG_NON_NESTED_FIQ
-	vector_stub	fiq, FIQ_MODE, 4
-
-	.long	__fiq_usr			@  0  (USR_26 / USR_32)
-	.long	__fiq_invalid			@  1  (FIQ_26 / FIQ_32)
-	.long	__fiq_invalid			@  2  (IRQ_26 / IRQ_32)
-	.long	__fiq_svc			@  3  (SVC_26 / SVC_32)
-	.long	__fiq_invalid			@  4
-	.long	__fiq_invalid			@  5
-	.long	__fiq_invalid			@  6
-	.long	__fiq_invalid			@  7
-	.long	__fiq_invalid			@  8
-	.long	__fiq_invalid			@  9
-	.long	__fiq_invalid			@  a
-	.long	__fiq_invalid			@  b
-	.long	__fiq_invalid			@  c
-	.long	__fiq_invalid			@  d
-	.long	__fiq_invalid			@  e
-	.long	__fiq_invalid			@  f
-#endif
 /*
  * Data abort dispatcher
  * Enter in ABT mode, spsr = USR CPSR, lr = USR PC
@@ -1264,11 +1178,9 @@ __stubs_start:
  * other mode than FIQ...  Ok you can switch to another mode, but you can't
  * get out of that mode without clobbering one register.
  */
-#ifndef CONFIG_NON_NESTED_FIQ
 vector_fiq:
 	disable_fiq
 	subs	pc, lr, #4
-#endif
 
 /*=============================================================================
  * Address exception handler
@@ -1318,3 +1230,9 @@ cr_alignment:
 	.space	4
 cr_no_alignment:
 	.space	4
+
+#ifdef CONFIG_MULTI_IRQ_HANDLER
+	.globl	handle_arch_irq
+handle_arch_irq:
+	.space	4
+#endif

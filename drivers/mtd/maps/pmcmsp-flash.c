@@ -3,7 +3,7 @@
  * Config with both CFI and JEDEC device support.
  *
  * Basically physmap.c with the addition of partitions and
- * an array of mapping info to accomodate more than one flash type per board.
+ * an array of mapping info to accommodate more than one flash type per board.
  *
  * Copyright 2005-2007 PMC-Sierra, Inc.
  *
@@ -28,6 +28,7 @@
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>

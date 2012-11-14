@@ -36,8 +36,8 @@
 #include <asm/irq.h>
 #include <asm/mach-types.h>
 
-#include <mach/usb.h>
-#include <mach/mux.h>
+#include <plat/usb.h>
+#include <plat/mux.h>
 
 
 #ifndef	DEBUG
@@ -843,7 +843,7 @@ static irqreturn_t omap_otg_irq(int irq, void *_isp)
 
 static struct platform_device *otg_dev;
 
-static int otg_init(struct isp1301 *isp)
+static int isp1301_otg_init(struct isp1301 *isp)
 {
 	u32 l;
 
@@ -1247,7 +1247,7 @@ static int __exit isp1301_remove(struct i2c_client *i2c)
 	isp->timer.data = 0;
 	set_bit(WORK_STOP, &isp->todo);
 	del_timer_sync(&isp->timer);
-	flush_scheduled_work();
+	flush_work_sync(&isp->work);
 
 	put_device(&i2c->dev);
 	the_transceiver = NULL;
@@ -1275,7 +1275,7 @@ static int __exit isp1301_remove(struct i2c_client *i2c)
 static int isp1301_otg_enable(struct isp1301 *isp)
 {
 	power_up(isp);
-	otg_init(isp);
+	isp1301_otg_init(isp);
 
 	/* NOTE:  since we don't change this, this provides
 	 * a few more interrupts than are strictly needed.
@@ -1510,7 +1510,7 @@ isp1301_start_hnp(struct otg_transceiver *dev)
 
 /*-------------------------------------------------------------------------*/
 
-static int __init
+static int __devinit
 isp1301_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 {
 	int			status;
@@ -1531,7 +1531,7 @@ isp1301_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	i2c_set_clientdata(i2c, isp);
 	isp->client = i2c;
 
-	/* verify the chip (shouldn't be necesary) */
+	/* verify the chip (shouldn't be necessary) */
 	status = isp1301_get_u16(isp, ISP1301_VENDOR_ID);
 	if (status != I2C_VENDOR_ID_PHILIPS) {
 		dev_dbg(&i2c->dev, "not philips id: %d\n", status);
@@ -1654,7 +1654,7 @@ static int __init isp_init(void)
 {
 	return i2c_add_driver(&isp1301_driver);
 }
-module_init(isp_init);
+subsys_initcall(isp_init);
 
 static void __exit isp_exit(void)
 {

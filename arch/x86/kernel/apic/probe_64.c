@@ -54,6 +54,9 @@ static int apicid_phys_pkg_id(int initial_apic_id, int index_msb)
  */
 void __init default_setup_apic_routing(void)
 {
+
+	enable_IR_x2apic();
+
 #ifdef CONFIG_X86_X2APIC
 	if (x2apic_mode
 #ifdef CONFIG_X86_UV
@@ -68,7 +71,7 @@ void __init default_setup_apic_routing(void)
 #endif
 
 	if (apic == &apic_flat && num_possible_cpus() > 8)
-		apic = &apic_physflat;
+			apic = &apic_physflat;
 
 	printk(KERN_INFO "Setting APIC routing to %s\n", apic->name);
 

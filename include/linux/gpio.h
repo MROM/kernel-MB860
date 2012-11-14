@@ -13,6 +13,8 @@
 #include <linux/errno.h>
 
 struct device;
+struct gpio;
+struct gpio_chip;
 
 /*
  * Some platforms don't support the GPIO programming interface.
@@ -33,7 +35,26 @@ static inline int gpio_request(unsigned gpio, const char *label)
 	return -ENOSYS;
 }
 
+static inline int gpio_request_one(unsigned gpio,
+					unsigned long flags, const char *label)
+{
+	return -ENOSYS;
+}
+
+static inline int gpio_request_array(struct gpio *array, size_t num)
+{
+	return -ENOSYS;
+}
+
 static inline void gpio_free(unsigned gpio)
+{
+	might_sleep();
+
+	/* GPIO can never have been requested */
+	WARN_ON(1);
+}
+
+static inline void gpio_free_array(struct gpio *array, size_t num)
 {
 	might_sleep();
 
@@ -47,6 +68,11 @@ static inline int gpio_direction_input(unsigned gpio)
 }
 
 static inline int gpio_direction_output(unsigned gpio, int value)
+{
+	return -ENOSYS;
+}
+
+static inline int gpio_set_debounce(unsigned gpio, unsigned debounce)
 {
 	return -ENOSYS;
 }
@@ -99,6 +125,12 @@ static inline int gpio_export_link(struct device *dev, const char *name,
 	return -EINVAL;
 }
 
+static inline int gpio_sysfs_set_active_low(unsigned gpio, int value)
+{
+	/* GPIO can never have been requested */
+	WARN_ON(1);
+	return -EINVAL;
+}
 
 static inline void gpio_unexport(unsigned gpio)
 {

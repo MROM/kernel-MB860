@@ -1,5 +1,7 @@
 /*
-	Copyright (C) 2004 - 2009 rt2x00 SourceForge Project
+	Copyright (C) 2010 Willow Garage <http://www.willowgarage.com>
+	Copyright (C) 2004 - 2010 Ivo van Doorn <IvDoorn@gmail.com>
+	Copyright (C) 2004 - 2009 Gertjan van Wingerde <gwingerde@gmail.com>
 	<http://rt2x00.serialmonkey.com>
 
 	This program is free software; you can redistribute it and/or modify
@@ -34,10 +36,12 @@
 #include <linux/mutex.h>
 #include <linux/etherdevice.h>
 #include <linux/input-polldev.h>
+#include <linux/kfifo.h>
 
 #include <net/mac80211.h>
 
 #include "rt2x00debug.h"
+#include "rt2x00dump.h"
 #include "rt2x00leds.h"
 #include "rt2x00reg.h"
 #include "rt2x00queue.h"
@@ -62,7 +66,7 @@
 
 #ifdef CONFIG_RT2X00_DEBUG
 #define DEBUG_PRINTK(__dev, __kernlvl, __lvl, __msg, __args...)	\
-	DEBUG_PRINTK_MSG(__dev, __kernlvl, __lvl, __msg, ##__args);
+	DEBUG_PRINTK_MSG(__dev, __kernlvl, __lvl, __msg, ##__args)
 #else
 #define DEBUG_PRINTK(__dev, __kernlvl, __lvl, __msg, __args...)	\
 	do { } while (0)
@@ -101,6 +105,12 @@
  */
 #define GET_DURATION(__size, __rate)	(((__size) * 8 * 10) / (__rate))
 #define GET_DURATION_RES(__size, __rate)(((__size) * 8 * 10) % (__rate))
+
+/*
+ * Determine the number of L2 padding bytes required between the header and
+ * the payload.
+ */
+#define L2PAD_SIZE(__hdrlen)	(-(__hdrlen) & 3)
 
 /*
  * Determine the alignment requirement,
@@ -150,6 +160,13 @@ struct avg_val {
 	int avg_weight;
 };
 
+enum rt2x00_chip_intf {
+	RT2X00_CHIP_INTF_PCI,
+	RT2X00_CHIP_INTF_PCIE,
+	RT2X00_CHIP_INTF_USB,
+	RT2X00_CHIP_INTF_SOC,
+};
+
 /*
  * Chipset identification
  * The chipset on the device is composed of a RT and RF chip.
@@ -157,17 +174,27 @@ struct avg_val {
  */
 struct rt2x00_chip {
 	u16 rt;
-#define RT2460		0x0101
-#define RT2560		0x0201
-#define RT2570		0x1201
-#define RT2561s		0x0301	/* Turbo */
-#define RT2561		0x0302
-#define RT2661		0x0401
-#define RT2571		0x1300
-#define RT2870		0x1600
+#define RT2460		0x2460
+#define RT2560		0x2560
+#define RT2570		0x2570
+#define RT2661		0x2661
+#define RT2573		0x2573
+#define RT2860		0x2860	/* 2.4GHz */
+#define RT2872		0x2872	/* WSOC */
+#define RT2883		0x2883	/* WSOC */
+#define RT3070		0x3070
+#define RT3071		0x3071
+#define RT3090		0x3090	/* 2.4GHz PCIe */
+#define RT3390		0x3390
+#define RT3572		0x3572
+#define RT3593		0x3593	/* PCIe */
+#define RT3883		0x3883	/* WSOC */
+#define RT5390         0x5390  /* 2.4GHz */
 
 	u16 rf;
-	u32 rev;
+	u16 rev;
+
+	enum rt2x00_chip_intf intf;
 };
 
 /*
@@ -188,8 +215,9 @@ struct channel_info {
 	unsigned int flags;
 #define GEOGRAPHY_ALLOWED	0x00000001
 
-	short tx_power1;
-	short tx_power2;
+	short max_power;
+	short default_power1;
+	short default_power2;
 };
 
 /*
@@ -198,6 +226,8 @@ struct channel_info {
 struct antenna_setup {
 	enum antenna rx;
 	enum antenna tx;
+	u8 rx_chain_num;
+	u8 tx_chain_num;
 };
 
 /*
@@ -305,16 +335,23 @@ struct link {
 	struct avg_val avg_rssi;
 
 	/*
-	 * Currently precalculated percentages of successful
-	 * TX and RX frames.
-	 */
-	int rx_percentage;
-	int tx_percentage;
-
-	/*
 	 * Work structure for scheduling periodic link tuning.
 	 */
 	struct delayed_work work;
+
+	/*
+	 * Work structure for scheduling periodic watchdog monitoring.
+	 * This work must be scheduled on the kernel workqueue, while
+	 * all other work structures must be queued on the mac80211
+	 * workqueue. This guarantees that the watchdog can schedule
+	 * other work structures and wait for their completion in order
+	 * to bring the device/driver back into the desired state.
+	 */
+	struct delayed_work watchdog_work;
+};
+
+enum rt2x00_delayed_flags {
+	DELAYED_UPDATE_BEACON,
 };
 
 /*
@@ -323,22 +360,6 @@ struct link {
  * is allocated as the private data for ieee80211_vif.
  */
 struct rt2x00_intf {
-	/*
-	 * All fields within the rt2x00_intf structure
-	 * must be protected with a spinlock.
-	 */
-	spinlock_t lock;
-
-	/*
-	 * MAC of the device.
-	 */
-	u8 mac[ETH_ALEN];
-
-	/*
-	 * BBSID of the AP to associate with.
-	 */
-	u8 bssid[ETH_ALEN];
-
 	/*
 	 * beacon->skb must be protected with the mutex.
 	 */
@@ -350,12 +371,12 @@ struct rt2x00_intf {
 	 * dedicated beacon entry.
 	 */
 	struct queue_entry *beacon;
+	bool enable_beacon;
 
 	/*
 	 * Actions that needed rescheduling.
 	 */
-	unsigned int delayed_flags;
-#define DELAYED_UPDATE_BEACON		0x00000001
+	unsigned long delayed_flags;
 
 	/*
 	 * Software sequence counter, this is only required
@@ -433,6 +454,7 @@ struct rt2x00lib_erp {
 	short eifs;
 
 	u16 beacon_int;
+	u16 ht_opmode;
 };
 
 /*
@@ -445,7 +467,6 @@ struct rt2x00lib_crypto {
 	const u8 *address;
 
 	u32 bssidx;
-	u32 aid;
 
 	u8 key[16];
 	u8 tx_mic[8];
@@ -463,13 +484,13 @@ struct rt2x00intf_conf {
 	enum nl80211_iftype type;
 
 	/*
-	 * TSF sync value, this is dependant on the operation type.
+	 * TSF sync value, this is dependent on the operation type.
 	 */
 	enum tsf_sync sync;
 
 	/*
-	 * The MAC and BSSID addressess are simple array of bytes,
-	 * these arrays are little endian, so when sending the addressess
+	 * The MAC and BSSID addresses are simple array of bytes,
+	 * these arrays are little endian, so when sending the addresses
 	 * to the drivers, copy the it into a endian-signed variable.
 	 *
 	 * Note that all devices (except rt2500usb) have 32 bits
@@ -491,6 +512,15 @@ struct rt2x00lib_ops {
 	 * Interrupt handlers.
 	 */
 	irq_handler_t irq_handler;
+
+	/*
+	 * TX status tasklet handler.
+	 */
+	void (*txstatus_tasklet) (unsigned long data);
+	void (*pretbtt_tasklet) (unsigned long data);
+	void (*tbtt_tasklet) (unsigned long data);
+	void (*rxdone_tasklet) (unsigned long data);
+	void (*autowake_tasklet) (unsigned long data);
 
 	/*
 	 * Device init handlers.
@@ -528,18 +558,25 @@ struct rt2x00lib_ops {
 			    struct link_qual *qual, const u32 count);
 
 	/*
+	 * Data queue handlers.
+	 */
+	void (*watchdog) (struct rt2x00_dev *rt2x00dev);
+	void (*start_queue) (struct data_queue *queue);
+	void (*kick_queue) (struct data_queue *queue);
+	void (*stop_queue) (struct data_queue *queue);
+	void (*flush_queue) (struct data_queue *queue);
+
+	/*
 	 * TX control handlers
 	 */
-	void (*write_tx_desc) (struct rt2x00_dev *rt2x00dev,
-			       struct sk_buff *skb,
+	void (*write_tx_desc) (struct queue_entry *entry,
 			       struct txentry_desc *txdesc);
-	int (*write_tx_data) (struct queue_entry *entry);
-	void (*write_beacon) (struct queue_entry *entry);
+	void (*write_tx_data) (struct queue_entry *entry,
+			       struct txentry_desc *txdesc);
+	void (*write_beacon) (struct queue_entry *entry,
+			      struct txentry_desc *txdesc);
+	void (*clear_beacon) (struct queue_entry *entry);
 	int (*get_tx_data_len) (struct queue_entry *entry);
-	void (*kick_tx_queue) (struct rt2x00_dev *rt2x00dev,
-			       const enum data_queue_qid queue);
-	void (*kill_tx_queue) (struct rt2x00_dev *rt2x00dev,
-			       const enum data_queue_qid queue);
 
 	/*
 	 * RX control handlers
@@ -567,7 +604,8 @@ struct rt2x00lib_ops {
 #define CONFIG_UPDATE_BSSID		( 1 << 3 )
 
 	void (*config_erp) (struct rt2x00_dev *rt2x00dev,
-			    struct rt2x00lib_erp *erp);
+			    struct rt2x00lib_erp *erp,
+			    u32 changed);
 	void (*config_ant) (struct rt2x00_dev *rt2x00dev,
 			    struct antenna_setup *ant);
 	void (*config) (struct rt2x00_dev *rt2x00dev,
@@ -591,6 +629,7 @@ struct rt2x00_ops {
 	const struct data_queue_desc *bcn;
 	const struct data_queue_desc *atim;
 	const struct rt2x00lib_ops *lib;
+	const void *drv;
 	const struct ieee80211_ops *hw;
 #ifdef CONFIG_RT2X00_LIB_DEBUGFS
 	const struct rt2x00debug *debugfs;
@@ -609,6 +648,7 @@ enum rt2x00_flags {
 	DEVICE_STATE_INITIALIZED,
 	DEVICE_STATE_STARTED,
 	DEVICE_STATE_ENABLED_RADIO,
+	DEVICE_STATE_SCANNING,
 
 	/*
 	 * Driver requirements
@@ -619,14 +659,22 @@ enum rt2x00_flags {
 	DRIVER_REQUIRE_DMA,
 	DRIVER_REQUIRE_COPY_IV,
 	DRIVER_REQUIRE_L2PAD,
+	DRIVER_REQUIRE_TXSTATUS_FIFO,
+	DRIVER_REQUIRE_TASKLET_CONTEXT,
+	DRIVER_REQUIRE_SW_SEQNO,
+	DRIVER_REQUIRE_HT_TX_DESC,
 
 	/*
 	 * Driver features
 	 */
 	CONFIG_SUPPORT_HW_BUTTON,
 	CONFIG_SUPPORT_HW_CRYPTO,
+	CONFIG_SUPPORT_POWER_LIMIT,
 	DRIVER_SUPPORT_CONTROL_FILTERS,
 	DRIVER_SUPPORT_CONTROL_FILTER_PSPOLL,
+	DRIVER_SUPPORT_PRE_TBTT_INTERRUPT,
+	DRIVER_SUPPORT_LINK_TUNING,
+	DRIVER_SUPPORT_WATCHDOG,
 
 	/*
 	 * Driver configuration
@@ -636,7 +684,6 @@ enum rt2x00_flags {
 	CONFIG_EXTERNAL_LNA_A,
 	CONFIG_EXTERNAL_LNA_BG,
 	CONFIG_DOUBLE_ANTENNA,
-	CONFIG_DISABLE_LINK_TUNING,
 	CONFIG_CHANNEL_HT40,
 };
 
@@ -664,6 +711,7 @@ struct rt2x00_dev {
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band bands[IEEE80211_NUM_BANDS];
 	enum ieee80211_band curr_band;
+	int curr_freq;
 
 	/*
 	 * If enabled, the debugfs interface structures
@@ -746,10 +794,12 @@ struct rt2x00_dev {
 	 *  - Open ap interface count.
 	 *  - Open sta interface count.
 	 *  - Association count.
+	 *  - Beaconing enabled count.
 	 */
 	unsigned int intf_ap_count;
 	unsigned int intf_sta_count;
 	unsigned int intf_associated;
+	unsigned int intf_beaconing;
 
 	/*
 	 * Link quality
@@ -815,10 +865,12 @@ struct rt2x00_dev {
 	 */
 	struct ieee80211_low_level_stats low_level_stats;
 
-	/*
-	 * RX configuration information.
+	/**
+	 * Work queue for all work which should not be placed
+	 * on the mac80211 workqueue (because of dependencies
+	 * between various work structures).
 	 */
-	struct ieee80211_rx_status rx_status;
+	struct workqueue_struct *workqueue;
 
 	/*
 	 * Scheduled work.
@@ -828,21 +880,54 @@ struct rt2x00_dev {
 	 */
 	struct work_struct intf_work;
 
+	/**
+	 * Scheduled work for TX/RX done handling (USB devices)
+	 */
+	struct work_struct rxdone_work;
+	struct work_struct txdone_work;
+
 	/*
-	 * Data queue arrays for RX, TX and Beacon.
-	 * The Beacon array also contains the Atim queue
-	 * if that is supported by the device.
+	 * Data queue arrays for RX, TX, Beacon and ATIM.
 	 */
 	unsigned int data_queues;
 	struct data_queue *rx;
 	struct data_queue *tx;
 	struct data_queue *bcn;
+	struct data_queue *atim;
 
 	/*
 	 * Firmware image.
 	 */
 	const struct firmware *fw;
+
+	/*
+	 * FIFO for storing tx status reports between isr and tasklet.
+	 */
+	DECLARE_KFIFO_PTR(txstatus_fifo, u32);
+
+	/*
+	 * Tasklet for processing tx status reports (rt2800pci).
+	 */
+	struct tasklet_struct txstatus_tasklet;
+	struct tasklet_struct pretbtt_tasklet;
+	struct tasklet_struct tbtt_tasklet;
+	struct tasklet_struct rxdone_tasklet;
+	struct tasklet_struct autowake_tasklet;
+
+	/*
+	 * Protect the interrupt mask register.
+	 */
+	spinlock_t irqmask_lock;
 };
+
+/*
+ * Register defines.
+ * Some registers require multiple attempts before success,
+ * in those cases REGISTER_BUSY_COUNT attempts should be
+ * taken with a REGISTER_BUSY_DELAY interval.
+ */
+#define REGISTER_BUSY_COUNT	100
+#define REGISTER_BUSY_DELAY	100
 
 /*
  * Generic RF access.
@@ -888,64 +973,114 @@ static inline void rt2x00_eeprom_write(struct rt2x00_dev *rt2x00dev,
  * Chipset handlers
  */
 static inline void rt2x00_set_chip(struct rt2x00_dev *rt2x00dev,
-				   const u16 rt, const u16 rf, const u32 rev)
+				   const u16 rt, const u16 rf, const u16 rev)
 {
-	INFO(rt2x00dev,
-	     "Chipset detected - rt: %04x, rf: %04x, rev: %08x.\n",
-	     rt, rf, rev);
-
 	rt2x00dev->chip.rt = rt;
 	rt2x00dev->chip.rf = rf;
 	rt2x00dev->chip.rev = rev;
+
+	INFO(rt2x00dev,
+	     "Chipset detected - rt: %04x, rf: %04x, rev: %04x.\n",
+	     rt2x00dev->chip.rt, rt2x00dev->chip.rf, rt2x00dev->chip.rev);
 }
 
-static inline void rt2x00_set_chip_rt(struct rt2x00_dev *rt2x00dev,
-				      const u16 rt)
+static inline bool rt2x00_rt(struct rt2x00_dev *rt2x00dev, const u16 rt)
 {
-	rt2x00dev->chip.rt = rt;
+	return (rt2x00dev->chip.rt == rt);
 }
 
-static inline void rt2x00_set_chip_rf(struct rt2x00_dev *rt2x00dev,
-				      const u16 rf, const u32 rev)
+static inline bool rt2x00_rf(struct rt2x00_dev *rt2x00dev, const u16 rf)
 {
-	rt2x00_set_chip(rt2x00dev, rt2x00dev->chip.rt, rf, rev);
+	return (rt2x00dev->chip.rf == rf);
 }
 
-static inline char rt2x00_rt(const struct rt2x00_chip *chipset, const u16 chip)
+static inline u16 rt2x00_rev(struct rt2x00_dev *rt2x00dev)
 {
-	return (chipset->rt == chip);
+	return rt2x00dev->chip.rev;
 }
 
-static inline char rt2x00_rf(const struct rt2x00_chip *chipset, const u16 chip)
+static inline bool rt2x00_rt_rev(struct rt2x00_dev *rt2x00dev,
+				 const u16 rt, const u16 rev)
 {
-	return (chipset->rf == chip);
+	return (rt2x00_rt(rt2x00dev, rt) && rt2x00_rev(rt2x00dev) == rev);
 }
 
-static inline u32 rt2x00_rev(const struct rt2x00_chip *chipset)
+static inline bool rt2x00_rt_rev_lt(struct rt2x00_dev *rt2x00dev,
+				    const u16 rt, const u16 rev)
 {
-	return chipset->rev;
+	return (rt2x00_rt(rt2x00dev, rt) && rt2x00_rev(rt2x00dev) < rev);
 }
 
-static inline bool rt2x00_check_rev(const struct rt2x00_chip *chipset,
-				    const u32 mask, const u32 rev)
+static inline bool rt2x00_rt_rev_gte(struct rt2x00_dev *rt2x00dev,
+				     const u16 rt, const u16 rev)
 {
-	return ((chipset->rev & mask) == rev);
+	return (rt2x00_rt(rt2x00dev, rt) && rt2x00_rev(rt2x00dev) >= rev);
+}
+
+static inline void rt2x00_set_chip_intf(struct rt2x00_dev *rt2x00dev,
+					enum rt2x00_chip_intf intf)
+{
+	rt2x00dev->chip.intf = intf;
+}
+
+static inline bool rt2x00_intf(struct rt2x00_dev *rt2x00dev,
+			       enum rt2x00_chip_intf intf)
+{
+	return (rt2x00dev->chip.intf == intf);
+}
+
+static inline bool rt2x00_is_pci(struct rt2x00_dev *rt2x00dev)
+{
+	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCI) ||
+	       rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCIE);
+}
+
+static inline bool rt2x00_is_pcie(struct rt2x00_dev *rt2x00dev)
+{
+	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCIE);
+}
+
+static inline bool rt2x00_is_usb(struct rt2x00_dev *rt2x00dev)
+{
+	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_USB);
+}
+
+static inline bool rt2x00_is_soc(struct rt2x00_dev *rt2x00dev)
+{
+	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_SOC);
 }
 
 /**
  * rt2x00queue_map_txskb - Map a skb into DMA for TX purposes.
- * @rt2x00dev: Pointer to &struct rt2x00_dev.
- * @skb: The skb to map.
+ * @entry: Pointer to &struct queue_entry
  */
-void rt2x00queue_map_txskb(struct rt2x00_dev *rt2x00dev, struct sk_buff *skb);
+void rt2x00queue_map_txskb(struct queue_entry *entry);
 
 /**
- * rt2x00queue_get_queue - Convert queue index to queue pointer
+ * rt2x00queue_unmap_skb - Unmap a skb from DMA.
+ * @entry: Pointer to &struct queue_entry
+ */
+void rt2x00queue_unmap_skb(struct queue_entry *entry);
+
+/**
+ * rt2x00queue_get_tx_queue - Convert tx queue index to queue pointer
  * @rt2x00dev: Pointer to &struct rt2x00_dev.
  * @queue: rt2x00 queue index (see &enum data_queue_qid).
+ *
+ * Returns NULL for non tx queues.
  */
-struct data_queue *rt2x00queue_get_queue(struct rt2x00_dev *rt2x00dev,
-					 const enum data_queue_qid queue);
+static inline struct data_queue *
+rt2x00queue_get_tx_queue(struct rt2x00_dev *rt2x00dev,
+			 const enum data_queue_qid queue)
+{
+	if (queue < rt2x00dev->ops->tx_queues && rt2x00dev->tx)
+		return &rt2x00dev->tx[queue];
+
+	if (queue == QID_ATIM)
+		return rt2x00dev->atim;
+
+	return NULL;
+}
 
 /**
  * rt2x00queue_get_entry - Get queue entry where the given index points to.
@@ -955,25 +1090,120 @@ struct data_queue *rt2x00queue_get_queue(struct rt2x00_dev *rt2x00dev,
 struct queue_entry *rt2x00queue_get_entry(struct data_queue *queue,
 					  enum queue_index index);
 
+/**
+ * rt2x00queue_pause_queue - Pause a data queue
+ * @queue: Pointer to &struct data_queue.
+ *
+ * This function will pause the data queue locally, preventing
+ * new frames to be added to the queue (while the hardware is
+ * still allowed to run).
+ */
+void rt2x00queue_pause_queue(struct data_queue *queue);
+
+/**
+ * rt2x00queue_unpause_queue - unpause a data queue
+ * @queue: Pointer to &struct data_queue.
+ *
+ * This function will unpause the data queue locally, allowing
+ * new frames to be added to the queue again.
+ */
+void rt2x00queue_unpause_queue(struct data_queue *queue);
+
+/**
+ * rt2x00queue_start_queue - Start a data queue
+ * @queue: Pointer to &struct data_queue.
+ *
+ * This function will start handling all pending frames in the queue.
+ */
+void rt2x00queue_start_queue(struct data_queue *queue);
+
+/**
+ * rt2x00queue_stop_queue - Halt a data queue
+ * @queue: Pointer to &struct data_queue.
+ *
+ * This function will stop all pending frames in the queue.
+ */
+void rt2x00queue_stop_queue(struct data_queue *queue);
+
+/**
+ * rt2x00queue_flush_queue - Flush a data queue
+ * @queue: Pointer to &struct data_queue.
+ * @drop: True to drop all pending frames.
+ *
+ * This function will flush the queue. After this call
+ * the queue is guaranteed to be empty.
+ */
+void rt2x00queue_flush_queue(struct data_queue *queue, bool drop);
+
+/**
+ * rt2x00queue_start_queues - Start all data queues
+ * @rt2x00dev: Pointer to &struct rt2x00_dev.
+ *
+ * This function will loop through all available queues to start them
+ */
+void rt2x00queue_start_queues(struct rt2x00_dev *rt2x00dev);
+
+/**
+ * rt2x00queue_stop_queues - Halt all data queues
+ * @rt2x00dev: Pointer to &struct rt2x00_dev.
+ *
+ * This function will loop through all available queues to stop
+ * any pending frames.
+ */
+void rt2x00queue_stop_queues(struct rt2x00_dev *rt2x00dev);
+
+/**
+ * rt2x00queue_flush_queues - Flush all data queues
+ * @rt2x00dev: Pointer to &struct rt2x00_dev.
+ * @drop: True to drop all pending frames.
+ *
+ * This function will loop through all available queues to flush
+ * any pending frames.
+ */
+void rt2x00queue_flush_queues(struct rt2x00_dev *rt2x00dev, bool drop);
+
+/*
+ * Debugfs handlers.
+ */
+/**
+ * rt2x00debug_dump_frame - Dump a frame to userspace through debugfs.
+ * @rt2x00dev: Pointer to &struct rt2x00_dev.
+ * @type: The type of frame that is being dumped.
+ * @skb: The skb containing the frame to be dumped.
+ */
+#ifdef CONFIG_RT2X00_LIB_DEBUGFS
+void rt2x00debug_dump_frame(struct rt2x00_dev *rt2x00dev,
+			    enum rt2x00_dump_type type, struct sk_buff *skb);
+#else
+static inline void rt2x00debug_dump_frame(struct rt2x00_dev *rt2x00dev,
+					  enum rt2x00_dump_type type,
+					  struct sk_buff *skb)
+{
+}
+#endif /* CONFIG_RT2X00_LIB_DEBUGFS */
+
 /*
  * Interrupt context handlers.
  */
 void rt2x00lib_beacondone(struct rt2x00_dev *rt2x00dev);
+void rt2x00lib_pretbtt(struct rt2x00_dev *rt2x00dev);
+void rt2x00lib_dmastart(struct queue_entry *entry);
+void rt2x00lib_dmadone(struct queue_entry *entry);
 void rt2x00lib_txdone(struct queue_entry *entry,
 		      struct txdone_entry_desc *txdesc);
-void rt2x00lib_rxdone(struct rt2x00_dev *rt2x00dev,
-		      struct queue_entry *entry);
+void rt2x00lib_txdone_noinfo(struct queue_entry *entry, u32 status);
+void rt2x00lib_rxdone(struct queue_entry *entry);
 
 /*
  * mac80211 handlers.
  */
-int rt2x00mac_tx(struct ieee80211_hw *hw, struct sk_buff *skb);
+void rt2x00mac_tx(struct ieee80211_hw *hw, struct sk_buff *skb);
 int rt2x00mac_start(struct ieee80211_hw *hw);
 void rt2x00mac_stop(struct ieee80211_hw *hw);
 int rt2x00mac_add_interface(struct ieee80211_hw *hw,
-			    struct ieee80211_if_init_conf *conf);
+			    struct ieee80211_vif *vif);
 void rt2x00mac_remove_interface(struct ieee80211_hw *hw,
-				struct ieee80211_if_init_conf *conf);
+				struct ieee80211_vif *vif);
 int rt2x00mac_config(struct ieee80211_hw *hw, u32 changed);
 void rt2x00mac_configure_filter(struct ieee80211_hw *hw,
 				unsigned int changed_flags,
@@ -988,10 +1218,10 @@ int rt2x00mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 #else
 #define rt2x00mac_set_key	NULL
 #endif /* CONFIG_RT2X00_LIB_CRYPTO */
+void rt2x00mac_sw_scan_start(struct ieee80211_hw *hw);
+void rt2x00mac_sw_scan_complete(struct ieee80211_hw *hw);
 int rt2x00mac_get_stats(struct ieee80211_hw *hw,
 			struct ieee80211_low_level_stats *stats);
-int rt2x00mac_get_tx_stats(struct ieee80211_hw *hw,
-			   struct ieee80211_tx_queue_stats *stats);
 void rt2x00mac_bss_info_changed(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct ieee80211_bss_conf *bss_conf,
@@ -999,6 +1229,7 @@ void rt2x00mac_bss_info_changed(struct ieee80211_hw *hw,
 int rt2x00mac_conf_tx(struct ieee80211_hw *hw, u16 queue,
 		      const struct ieee80211_tx_queue_params *params);
 void rt2x00mac_rfkill_poll(struct ieee80211_hw *hw);
+void rt2x00mac_flush(struct ieee80211_hw *hw, bool drop);
 
 /*
  * Driver allocation handlers.

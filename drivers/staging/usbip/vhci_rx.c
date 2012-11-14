@@ -17,6 +17,9 @@
  * USA.
  */
 
+#include <linux/slab.h>
+#include <linux/kthread.h>
+
 #include "usbip_common.h"
 #include "vhci.h"
 
@@ -67,7 +70,6 @@ static void vhci_recv_ret_submit(struct vhci_device *vdev,
 {
 	struct usbip_device *ud = &vdev->ud;
 	struct urb *urb;
-	unsigned long flags;
 
 	spin_lock(&vdev->priv_lock);
 
@@ -108,9 +110,9 @@ static void vhci_recv_ret_submit(struct vhci_device *vdev,
 
 	usbip_dbg_vhci_rx("now giveback urb %p\n", urb);
 
-	spin_lock_irqsave(&the_controller->lock, flags);
+	spin_lock(&the_controller->lock);
 	usb_hcd_unlink_urb_from_ep(vhci_to_hcd(the_controller), urb);
-	spin_unlock_irqrestore(&the_controller->lock, flags);
+	spin_unlock(&the_controller->lock);
 
 	usb_hcd_giveback_urb(vhci_to_hcd(the_controller), urb, urb->status);
 
@@ -151,7 +153,6 @@ static void vhci_recv_ret_unlink(struct vhci_device *vdev,
 {
 	struct vhci_unlink *unlink;
 	struct urb *urb;
-	unsigned long flags;
 
 	usbip_dump_header(pdu);
 
@@ -183,9 +184,9 @@ static void vhci_recv_ret_unlink(struct vhci_device *vdev,
 		urb->status = pdu->u.ret_unlink.status;
 		usbip_uinfo("%d\n", urb->status);
 
-		spin_lock_irqsave(&the_controller->lock, flags);
+		spin_lock(&the_controller->lock);
 		usb_hcd_unlink_urb_from_ep(vhci_to_hcd(the_controller), urb);
-		spin_unlock_irqrestore(&the_controller->lock, flags);
+		spin_unlock(&the_controller->lock);
 
 		usb_hcd_giveback_urb(vhci_to_hcd(the_controller), urb,
 								urb->status);
@@ -194,6 +195,19 @@ static void vhci_recv_ret_unlink(struct vhci_device *vdev,
 	kfree(unlink);
 
 	return;
+}
+
+static int vhci_priv_tx_empty(struct vhci_device *vdev)
+{
+	int empty = 0;
+
+	spin_lock(&vdev->priv_lock);
+
+	empty = list_empty(&vdev->priv_rx);
+
+	spin_unlock(&vdev->priv_lock);
+
+	return empty;
 }
 
 /* recv a pdu */
@@ -208,11 +222,29 @@ static void vhci_rx_pdu(struct usbip_device *ud)
 
 	memset(&pdu, 0, sizeof(pdu));
 
-
 	/* 1. receive a pdu header */
 	ret = usbip_xmit(0, ud->tcp_socket, (char *) &pdu, sizeof(pdu), 0);
+	if (ret < 0) {
+		if (ret == -ECONNRESET)
+			usbip_uinfo("connection reset by peer\n");
+		else if (ret == -EAGAIN) {
+			/* ignore if connection was idle */
+			if (vhci_priv_tx_empty(vdev))
+				return;
+			usbip_uinfo("connection timed out with pending urbs\n");
+		} else if (ret != -ERESTARTSYS)
+			usbip_uinfo("xmit failed %d\n", ret);
+
+		usbip_event_add(ud, VDEV_EVENT_ERROR_TCP);
+		return;
+	}
+	if (ret == 0) {
+		usbip_uinfo("connection closed");
+		usbip_event_add(ud, VDEV_EVENT_DOWN);
+		return;
+	}
 	if (ret != sizeof(pdu)) {
-		usbip_uerr("receiving pdu failed! size is %d, should be %d\n",
+		usbip_uerr("received pdu size is %d, should be %d\n",
 					ret, (unsigned int)sizeof(pdu));
 		usbip_event_add(ud, VDEV_EVENT_ERROR_TCP);
 		return;
@@ -241,22 +273,17 @@ static void vhci_rx_pdu(struct usbip_device *ud)
 
 /*-------------------------------------------------------------------------*/
 
-void vhci_rx_loop(struct usbip_task *ut)
+int vhci_rx_loop(void *data)
 {
-	struct usbip_device *ud = container_of(ut, struct usbip_device, tcp_rx);
+	struct usbip_device *ud = data;
 
 
-	while (1) {
-		if (signal_pending(current)) {
-			usbip_dbg_vhci_rx("signal catched!\n");
-			break;
-		}
-
-
+	while (!kthread_should_stop()) {
 		if (usbip_event_happened(ud))
 			break;
 
 		vhci_rx_pdu(ud);
 	}
-}
 
+	return 0;
+}

@@ -83,8 +83,8 @@ struct uaccess_ops {
 	size_t (*clear_user)(size_t, void __user *);
 	size_t (*strnlen_user)(size_t, const char __user *);
 	size_t (*strncpy_from_user)(size_t, const char __user *, char *);
-	int (*futex_atomic_op)(int op, int __user *, int oparg, int *old);
-	int (*futex_atomic_cmpxchg)(int __user *, int old, int new);
+	int (*futex_atomic_op)(int op, u32 __user *, int oparg, int *old);
+	int (*futex_atomic_cmpxchg)(u32 *, u32 __user *, u32 old, u32 new);
 };
 
 extern struct uaccess_ops uaccess;
@@ -92,6 +92,8 @@ extern struct uaccess_ops uaccess_std;
 extern struct uaccess_ops uaccess_mvcos;
 extern struct uaccess_ops uaccess_mvcos_switch;
 extern struct uaccess_ops uaccess_pt;
+
+extern int __handle_fault(unsigned long, unsigned long, int);
 
 static inline int __put_user_fn(size_t size, void __user *ptr, void *x)
 {
@@ -263,6 +265,12 @@ __copy_from_user(void *to, const void __user *from, unsigned long n)
 		return uaccess.copy_from_user(n, from, to);
 }
 
+extern void copy_from_user_overflow(void)
+#ifdef CONFIG_DEBUG_STRICT_USER_COPY_CHECKS
+__compiletime_warning("copy_from_user() buffer size is not provably correct")
+#endif
+;
+
 /**
  * copy_from_user: - Copy a block of data from user space.
  * @to:   Destination address, in kernel space.
@@ -282,7 +290,13 @@ __copy_from_user(void *to, const void __user *from, unsigned long n)
 static inline unsigned long __must_check
 copy_from_user(void *to, const void __user *from, unsigned long n)
 {
+	unsigned int sz = __compiletime_object_size(to);
+
 	might_fault();
+	if (unlikely(sz != -1 && sz < n)) {
+		copy_from_user_overflow();
+		return n;
+	}
 	if (access_ok(VERIFY_READ, from, n))
 		n = __copy_from_user(to, from, n);
 	else

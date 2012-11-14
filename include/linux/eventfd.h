@@ -45,12 +45,6 @@ int eventfd_ctx_remove_wait_queue(struct eventfd_ctx *ctx, wait_queue_t *wait,
  * Ugly ugly ugly error layer to support modules that uses eventfd but
  * pretend to work in !CONFIG_EVENTFD configurations. Namely, AIO.
  */
-
-struct file *eventfd_fget(int fd)
-{
-	return ERR_PTR(-ENOSYS);
-}
-
 static inline struct file *eventfd_file_create(unsigned int count, int flags)
 {
 	return ERR_PTR(-ENOSYS);
@@ -86,5 +80,4 @@ static inline int eventfd_ctx_remove_wait_queue(struct eventfd_ctx *ctx,
 #endif
 
 #endif /* _LINUX_EVENTFD_H */
-
 

@@ -1,5 +1,4 @@
 nvhost-objs = \
-	debug.o \
 	nvhost_acm.o \
 	nvhost_syncpt.o \
 	nvhost_cdma.o \
@@ -7,6 +6,8 @@ nvhost-objs = \
 	nvhost_intr.o \
 	nvhost_channel.o \
 	nvhost_3dctx.o \
-	nvhost_dev.o
+	dev.o \
+	bus.o \
+	debug.o
 
-obj-$(CONFIG_FB_TEGRA_GRHOST) += nvhost.o
+obj-$(CONFIG_TEGRA_GRHOST) += nvhost.o

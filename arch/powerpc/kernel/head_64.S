@@ -37,8 +37,10 @@
 #include <asm/firmware.h>
 #include <asm/page_64.h>
 #include <asm/irqflags.h>
+#include <asm/kvm_book3s_asm.h>
+#include <asm/ptrace.h>
 
-/* The physical memory is layed out such that the secondary processor
+/* The physical memory is laid out such that the secondary processor
  * spin code sits at 0x0000...0x00ff. On server, the vectors follow
  * using the layout described in exceptions-64s.S
  */
@@ -95,7 +97,7 @@ __secondary_hold_acknowledge:
 	.llong hvReleaseData-KERNELBASE
 #endif /* CONFIG_PPC_ISERIES */
 
-#ifdef CONFIG_CRASH_DUMP
+#ifdef CONFIG_RELOCATABLE
 	/* This flag is set to 1 by a loader if the kernel should run
 	 * at the loaded address instead of the linked address.  This
 	 * is used by kexec-tools to keep the the kdump kernel in the
@@ -212,7 +214,8 @@ generic_secondary_common_init:
 	 * physical cpu id in r24, we need to search the pacas to find
 	 * which logical id maps to our physical one.
 	 */
-	LOAD_REG_ADDR(r13, paca)	/* Get base vaddr of paca array	 */
+	LOAD_REG_ADDR(r13, paca)	/* Load paca pointer		 */
+	ld	r13,0(r13)		/* Get base vaddr of paca array	 */
 	li	r5,0			/* logical cpu id                */
 1:	lhz	r6,PACAHWCPUID(r13)	/* Load HW procid from paca      */
 	cmpw	r6,r24			/* Compare to our id             */
@@ -382,12 +385,10 @@ _STATIC(__after_prom_start)
 	/* process relocations for the final address of the kernel */
 	lis	r25,PAGE_OFFSET@highest	/* compute virtual base of kernel */
 	sldi	r25,r25,32
-#ifdef CONFIG_CRASH_DUMP
 	lwz	r7,__run_at_load-_stext(r26)
-	cmplwi	cr0,r7,1	/* kdump kernel ? - stay where we are */
+	cmplwi	cr0,r7,1	/* flagged to stay where we are ? */
 	bne	1f
 	add	r25,r25,r26
-#endif
 1:	mr	r3,r25
 	bl	.relocate
 #endif
@@ -529,10 +530,18 @@ _GLOBAL(pmac_secondary_start)
 	mtmsrd	r3			/* RI on */
 
 	/* Set up a paca value for this processor. */
-	LOAD_REG_ADDR(r4,paca)		/* Get base vaddr of paca array	*/
+	LOAD_REG_ADDR(r4,paca)		/* Load paca pointer		*/
+	ld	r4,0(r4)		/* Get base vaddr of paca array	*/
 	mulli	r13,r24,PACA_SIZE	/* Calculate vaddr of right paca */
 	add	r13,r13,r4		/* for this processor.		*/
 	mtspr	SPRN_SPRG_PACA,r13	/* Save vaddr of paca in an SPRG*/
+
+	/* Mark interrupts soft and hard disabled (they might be enabled
+	 * in the PACA when doing hotplug)
+	 */
+	li	r0,0
+	stb	r0,PACASOFTIRQEN(r13)
+	stb	r0,PACAHARDIRQEN(r13)
 
 	/* Create a temp kernel stack for use before relocation is on.	*/
 	ld	r1,PACAEMERGSP(r13)
@@ -610,6 +619,17 @@ END_FW_FTR_SECTION_IFCLR(FW_FEATURE_ISERIES)
  */
 _GLOBAL(start_secondary_prolog)
 	ld	r2,PACATOC(r13)
+	li	r3,0
+	std	r3,0(r1)		/* Zero the stack frame pointer	*/
+	bl	.start_secondary
+	b	.
+/*
+ * Reset stack pointer and call start_secondary
+ * to continue with online operation when woken up
+ * from cede in cpu offline.
+ */
+_GLOBAL(start_secondary_resume)
+	ld	r1,PACAKSAVE(r13)	/* Reload kernel stack pointer */
 	li	r3,0
 	std	r3,0(r1)		/* Zero the stack frame pointer	*/
 	bl	.start_secondary

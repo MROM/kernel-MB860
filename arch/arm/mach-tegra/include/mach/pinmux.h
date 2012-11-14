@@ -23,7 +23,7 @@
 #error "Undefined Tegra architecture"
 #endif
 
-typedef enum {
+enum tegra_mux_func {
 	TEGRA_MUX_RSVD = 0x8000,
 	TEGRA_MUX_RSVD1 = 0x8000,
 	TEGRA_MUX_RSVD2 = 0x8001,
@@ -90,21 +90,22 @@ typedef enum {
 	TEGRA_MUX_VI,
 	TEGRA_MUX_VI_SENSOR_CLK,
 	TEGRA_MUX_XIO,
+	TEGRA_MUX_SAFE,
 	TEGRA_MAX_MUX,
-} tegra_mux_func_t;
+};
 
-typedef enum {
+enum tegra_pullupdown {
 	TEGRA_PUPD_NORMAL = 0,
 	TEGRA_PUPD_PULL_DOWN,
 	TEGRA_PUPD_PULL_UP,
-} tegra_pullupdown_t;
+};
 
-typedef enum {
+enum tegra_tristate {
 	TEGRA_TRI_NORMAL = 0,
 	TEGRA_TRI_TRISTATE = 1,
-} tegra_tristate_t;
+};
 
-typedef enum {
+enum tegra_vddio {
 	TEGRA_VDDIO_BB = 0,
 	TEGRA_VDDIO_LCD,
 	TEGRA_VDDIO_VI,
@@ -114,13 +115,91 @@ typedef enum {
 	TEGRA_VDDIO_SYS,
 	TEGRA_VDDIO_AUDIO,
 	TEGRA_VDDIO_SD,
-} tegra_vddio_t;
+};
 
 struct tegra_pingroup_config {
-	tegra_pingroup_t	pingroup;
-	tegra_mux_func_t	func;
-	tegra_pullupdown_t	pupd;
-	tegra_tristate_t	tristate;
+	enum tegra_pingroup	pingroup;
+	enum tegra_mux_func	func;
+	enum tegra_pullupdown	pupd;
+	enum tegra_tristate	tristate;
+};
+
+enum tegra_slew {
+	TEGRA_SLEW_FASTEST = 0,
+	TEGRA_SLEW_FAST,
+	TEGRA_SLEW_SLOW,
+	TEGRA_SLEW_SLOWEST,
+	TEGRA_MAX_SLEW,
+};
+
+enum tegra_pull_strength {
+	TEGRA_PULL_0 = 0,
+	TEGRA_PULL_1,
+	TEGRA_PULL_2,
+	TEGRA_PULL_3,
+	TEGRA_PULL_4,
+	TEGRA_PULL_5,
+	TEGRA_PULL_6,
+	TEGRA_PULL_7,
+	TEGRA_PULL_8,
+	TEGRA_PULL_9,
+	TEGRA_PULL_10,
+	TEGRA_PULL_11,
+	TEGRA_PULL_12,
+	TEGRA_PULL_13,
+	TEGRA_PULL_14,
+	TEGRA_PULL_15,
+	TEGRA_PULL_16,
+	TEGRA_PULL_17,
+	TEGRA_PULL_18,
+	TEGRA_PULL_19,
+	TEGRA_PULL_20,
+	TEGRA_PULL_21,
+	TEGRA_PULL_22,
+	TEGRA_PULL_23,
+	TEGRA_PULL_24,
+	TEGRA_PULL_25,
+	TEGRA_PULL_26,
+	TEGRA_PULL_27,
+	TEGRA_PULL_28,
+	TEGRA_PULL_29,
+	TEGRA_PULL_30,
+	TEGRA_PULL_31,
+	TEGRA_MAX_PULL,
+};
+
+enum tegra_drive {
+	TEGRA_DRIVE_DIV_8 = 0,
+	TEGRA_DRIVE_DIV_4,
+	TEGRA_DRIVE_DIV_2,
+	TEGRA_DRIVE_DIV_1,
+	TEGRA_MAX_DRIVE,
+};
+
+enum tegra_hsm {
+	TEGRA_HSM_DISABLE = 0,
+	TEGRA_HSM_ENABLE,
+};
+
+enum tegra_schmitt {
+	TEGRA_SCHMITT_DISABLE = 0,
+	TEGRA_SCHMITT_ENABLE,
+};
+
+struct tegra_drive_pingroup_config {
+	enum tegra_drive_pingroup pingroup;
+	enum tegra_hsm hsm;
+	enum tegra_schmitt schmitt;
+	enum tegra_drive drive;
+	enum tegra_pull_strength pull_down;
+	enum tegra_pull_strength pull_up;
+	enum tegra_slew slew_rising;
+	enum tegra_slew slew_falling;
+};
+
+struct tegra_drive_pingroup_desc {
+	const char *name;
+	s16 reg;
 };
 
 struct tegra_pingroup_desc {
@@ -128,29 +207,36 @@ struct tegra_pingroup_desc {
 	int funcs[4];
 	int func_safe;
 	int vddio;
-	s16 tri_reg; 		/* offset into the TRISTATE_REG_* register bank */
-	s16 mux_reg;		/* offset into the PIN_MUX_CTL_* register bank */
-	s16 pupd_reg;		/* offset into the PULL_UPDOWN_REG_* register bank */
-	s8 tri_bit; 		/* offset into the TRISTATE_REG_* register bit */
-	s8 mux_bit;		/* offset into the PIN_MUX_CTL_* register bit */
-	s8 pupd_bit;		/* offset into the PULL_UPDOWN_REG_* register bit */
+	s16 tri_reg; 	/* offset into the TRISTATE_REG_* register bank */
+	s16 mux_reg;	/* offset into the PIN_MUX_CTL_* register bank */
+	s16 pupd_reg;	/* offset into the PULL_UPDOWN_REG_* register bank */
+	s8 tri_bit; 	/* offset into the TRISTATE_REG_* register bit */
+	s8 mux_bit;	/* offset into the PIN_MUX_CTL_* register bit */
+	s8 pupd_bit;	/* offset into the PULL_UPDOWN_REG_* register bit */
 };
 
-int tegra_pinmux_set_tristate(tegra_pingroup_t pg, tegra_tristate_t tristate);
-int tegra_pinmux_set_pullupdown(tegra_pingroup_t pg, tegra_pullupdown_t pupd);
+extern const struct tegra_pingroup_desc tegra_soc_pingroups[];
+extern const struct tegra_drive_pingroup_desc tegra_soc_drive_pingroups[];
 
-void tegra_pinmux_init_pingroups(void);
-const struct tegra_pingroup_desc* tegra_pinmux_get_pingroups(void);
+int tegra_pinmux_set_tristate(enum tegra_pingroup pg,
+	enum tegra_tristate tristate);
+int tegra_pinmux_set_pullupdown(enum tegra_pingroup pg,
+	enum tegra_pullupdown pupd);
 
-void tegra_pinmux_config_table(const struct tegra_pingroup_config *config, int len);
+void tegra_pinmux_config_table(const struct tegra_pingroup_config *config,
+	int len);
 
+void tegra_drive_pinmux_config_table(struct tegra_drive_pingroup_config *config,
+	int len);
+void tegra_pinmux_set_safe_pinmux_table(const struct tegra_pingroup_config *config,
+	int len);
 void tegra_pinmux_config_pinmux_table(const struct tegra_pingroup_config *config,
-				      int len, bool is_set);
+	int len);
 void tegra_pinmux_config_tristate_table(const struct tegra_pingroup_config *config,
-					int len, tegra_tristate_t tristate);
+	int len, enum tegra_tristate tristate);
 void tegra_pinmux_config_pullupdown_table(const struct tegra_pingroup_config *config,
-					  int len, tegra_pullupdown_t pupd);
-int tegra_pinmux_get_vddio(tegra_pingroup_t pg);
-void tegra_pinmux_set_vddio_tristate(tegra_vddio_t vddio,
-				     tegra_tristate_t tristate);
+	int len, enum tegra_pullupdown pupd);
+
+void tegra_init_pinmux(void);
 #endif
+

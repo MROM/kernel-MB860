@@ -30,22 +30,6 @@ unsigned int __init scu_get_core_count(void __iomem *scu_base)
 }
 
 /*
- * Invalidate tag data associated with a CPU
- */
-void scu_inv_cpu(void __iomem *scu_base, int cpu)
-{
-	if (cpu >= NR_CPUS)
-		return;
-
-	if (likely(cpu>=0)) {
-		/* this should be done before a processor is online */
-		WARN_ON_ONCE(cpu_online(cpu));
-		writel(0xf<<(4*cpu), scu_base + SCU_INVALIDATE);
-	} else
-		writel(0xffff, scu_base + SCU_INVALIDATE);
-}
-
-/*
  * Enable the SCU
  */
 void __init scu_enable(void __iomem *scu_base)
@@ -65,4 +49,27 @@ void __init scu_enable(void __iomem *scu_base)
 	 * initialised is visible to the other CPUs.
 	 */
 	flush_cache_all();
+}
+
+/*
+ * Set the executing CPUs power mode as defined.  This will be in
+ * preparation for it executing a WFI instruction.
+ *
+ * This function must be called with preemption disabled, and as it
+ * has the side effect of disabling coherency, caches must have been
+ * flushed.  Interrupts must also have been disabled.
+ */
+int scu_power_mode(void __iomem *scu_base, unsigned int mode)
+{
+	unsigned int val;
+	int cpu = smp_processor_id();
+
+	if (mode > 3 || mode == 1 || cpu > 3)
+		return -EINVAL;
+
+	val = __raw_readb(scu_base + SCU_CPU_STATUS + cpu) & ~0x03;
+	val |= mode;
+	__raw_writeb(val, scu_base + SCU_CPU_STATUS + cpu);
+
+	return 0;
 }

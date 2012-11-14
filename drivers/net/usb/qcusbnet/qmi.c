@@ -203,10 +203,10 @@ int qmux_fill(u16 cid, void *buf, size_t size)
 	return 0;
 }
 
-static u16 tlv_get(void *msg, u16 msgsize, u8 type, void *buf, u16 bufsize) {
+static u16 tlv_get(void *msg, u16 msgsize, u8 type, void *buf, u16 bufsize)
+{
 	u16 pos;
 	u16 msize = 0;
-	u16 count;
 
 	if (!msg || !buf)
 		return -ENOMEM;
@@ -217,18 +217,8 @@ static u16 tlv_get(void *msg, u16 msgsize, u8 type, void *buf, u16 bufsize) {
 			if (bufsize < msize)
 				return -ENOMEM;
 
-			/*memcpy(buf, msg + pos + 3, msize);
+			memcpy(buf, msg + pos + 3, msize);
 			return msize;
-		 	replacement memcpy
-            		memcpy( pOutDataBuf,
-                    	pQMIMessage + pos + 3,
-                    	tlvSize ); */
-        		 
-         		for (count = 0; count < msize; count++)
-         		{
-            			*((char*)(buf + count)) = *((char*)(msg + pos + 3 + count));
-         		}		
-         		return msize;
 		}
 	}
 
@@ -316,14 +306,14 @@ int qmiwds_event_resp(void *buf, u16 size, struct qmiwds_stats *stats)
 
 	result = qmi_msgid(buf, size);
 	if (result == 0x01) {
-		tlv_get(buf, size, 0x10, (void*)&stats->txok, 4);
-		tlv_get(buf, size, 0x11, (void*)&stats->rxok, 4);
-		tlv_get(buf, size, 0x12, (void*)&stats->txerr, 4);
-		tlv_get(buf, size, 0x13, (void*)&stats->rxerr, 4);
-		tlv_get(buf, size, 0x14, (void*)&stats->txofl, 4);
-		tlv_get(buf, size, 0x15, (void*)&stats->rxofl, 4);
-		tlv_get(buf, size, 0x19, (void*)&stats->txbytesok, 8);
-		tlv_get(buf, size, 0x1A, (void*)&stats->rxbytesok, 8);
+		tlv_get(buf, size, 0x10, &stats->txok, 4);
+		tlv_get(buf, size, 0x11, &stats->rxok, 4);
+		tlv_get(buf, size, 0x12, &stats->txerr, 4);
+		tlv_get(buf, size, 0x13, &stats->rxerr, 4);
+		tlv_get(buf, size, 0x14, &stats->txofl, 4);
+		tlv_get(buf, size, 0x15, &stats->rxofl, 4);
+		tlv_get(buf, size, 0x19, &stats->txbytesok, 8);
+		tlv_get(buf, size, 0x1A, &stats->rxbytesok, 8);
 	} else if (result == 0x22) {
 		result = tlv_get(buf, size, 0x01, &status[0], 2);
 		if (result >= 1)
@@ -360,7 +350,7 @@ int qmidms_meid_resp(void *buf,	u16 size, char *meid, int meidsize)
 	if (result)
 		return -EFAULT;
 
-	result = tlv_get(buf, size, 0x12, (void*)meid, 14);
+	result = tlv_get(buf, size, 0x12, meid, 14);
 	if (result != 14)
 		return -EFAULT;
 

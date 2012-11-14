@@ -40,6 +40,7 @@
 #include <linux/file.h>
 #include <linux/parser.h>
 #include <linux/semaphore.h>
+#include <linux/slab.h>
 #include <net/9p/9p.h>
 #include <net/9p/client.h>
 #include <net/9p/transport.h>
@@ -58,7 +59,6 @@
 						 * safely advertise a maxsize
 						 * of 64k */
 
-#define P9_RDMA_MAX_SGE (P9_RDMA_MAXSIZE >> PAGE_SHIFT)
 /**
  * struct p9_trans_rdma - RDMA transport instance
  *
@@ -166,7 +166,7 @@ static int parse_opts(char *params, struct p9_rdma_opts *opts)
 	char *p;
 	substring_t args[MAX_OPT_ARGS];
 	int option;
-	char *options;
+	char *options, *tmp_options;
 	int ret;
 
 	opts->port = P9_PORT;
@@ -177,12 +177,13 @@ static int parse_opts(char *params, struct p9_rdma_opts *opts)
 	if (!params)
 		return 0;
 
-	options = kstrdup(params, GFP_KERNEL);
-	if (!options) {
+	tmp_options = kstrdup(params, GFP_KERNEL);
+	if (!tmp_options) {
 		P9_DPRINTK(P9_DEBUG_ERROR,
 			   "failed to allocate copy of option string\n");
 		return -ENOMEM;
 	}
+	options = tmp_options;
 
 	while ((p = strsep(&options, ",")) != NULL) {
 		int token;
@@ -216,7 +217,7 @@ static int parse_opts(char *params, struct p9_rdma_opts *opts)
 	}
 	/* RQ must be at least as large as the SQ */
 	opts->rq_depth = max(opts->rq_depth, opts->sq_depth);
-	kfree(options);
+	kfree(tmp_options);
 	return 0;
 }
 
@@ -306,7 +307,6 @@ handle_recv(struct p9_client *client, struct p9_trans_rdma *rdma,
 		   req, err, status);
 	rdma->state = P9_RDMA_FLUSHING;
 	client->status = Disconnected;
-	return;
 }
 
 static void
@@ -424,9 +424,11 @@ static int rdma_request(struct p9_client *client, struct p9_req_t *req)
 	struct p9_rdma_context *rpl_context = NULL;
 
 	/* Allocate an fcall for the reply */
-	rpl_context = kmalloc(sizeof *rpl_context, GFP_KERNEL);
-	if (!rpl_context)
+	rpl_context = kmalloc(sizeof *rpl_context, GFP_NOFS);
+	if (!rpl_context) {
+		err = -ENOMEM;
 		goto err_close;
+	}
 
 	/*
 	 * If the request has a buffer, steal it, otherwise
@@ -435,7 +437,7 @@ static int rdma_request(struct p9_client *client, struct p9_req_t *req)
 	 */
 	if (!req->rc) {
 		req->rc = kmalloc(sizeof(struct p9_fcall)+client->msize,
-								GFP_KERNEL);
+				  GFP_NOFS);
 		if (req->rc) {
 			req->rc->sdata = (char *) req->rc +
 						sizeof(struct p9_fcall);
@@ -444,8 +446,8 @@ static int rdma_request(struct p9_client *client, struct p9_req_t *req)
 	}
 	rpl_context->rc = req->rc;
 	if (!rpl_context->rc) {
-		kfree(rpl_context);
-		goto err_close;
+		err = -ENOMEM;
+		goto err_free2;
 	}
 
 	/*
@@ -457,11 +459,8 @@ static int rdma_request(struct p9_client *client, struct p9_req_t *req)
 	 */
 	if (atomic_inc_return(&rdma->rq_count) <= rdma->rq_depth) {
 		err = post_recv(client, rpl_context);
-		if (err) {
-			kfree(rpl_context->rc);
-			kfree(rpl_context);
-			goto err_close;
-		}
+		if (err)
+			goto err_free1;
 	} else
 		atomic_dec(&rdma->rq_count);
 
@@ -469,9 +468,11 @@ static int rdma_request(struct p9_client *client, struct p9_req_t *req)
 	req->rc = NULL;
 
 	/* Post the request */
-	c = kmalloc(sizeof *c, GFP_KERNEL);
-	if (!c)
-		goto err_close;
+	c = kmalloc(sizeof *c, GFP_NOFS);
+	if (!c) {
+		err = -ENOMEM;
+		goto err_free1;
+	}
 	c->req = req;
 
 	c->busa = ib_dma_map_single(rdma->cm_id->device,
@@ -498,9 +499,15 @@ static int rdma_request(struct p9_client *client, struct p9_req_t *req)
 	return ib_post_send(rdma->qp, &wr, &bad_wr);
 
  error:
+	kfree(c);
+	kfree(rpl_context->rc);
+	kfree(rpl_context);
 	P9_DPRINTK(P9_DEBUG_ERROR, "EIO\n");
 	return -EIO;
-
+ err_free1:
+	kfree(rpl_context->rc);
+ err_free2:
+	kfree(rpl_context);
  err_close:
 	spin_lock_irqsave(&rdma->req_lock, flags);
 	if (rdma->state < P9_RDMA_CLOSING) {

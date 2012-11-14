@@ -189,7 +189,12 @@ static inline unsigned int sdio_max_byte_size(struct sdio_func *func)
 {
 	unsigned mval =	min(func->card->host->max_seg_size,
 			    func->card->host->max_blk_size);
-	mval = min(mval, func->max_blksize);
+
+	if (mmc_blksz_for_byte_mode(func->card))
+		mval = min(mval, func->cur_blksize);
+	else
+		mval = min(mval, func->max_blksize);
+
 	return min(mval, 512u); /* maximum size for byte mode */
 }
 
@@ -434,6 +439,36 @@ void sdio_writeb(struct sdio_func *func, u8 b, unsigned int addr, int *err_ret)
 EXPORT_SYMBOL_GPL(sdio_writeb);
 
 /**
+ *	sdio_writeb_readb - write and read a byte from SDIO function
+ *	@func: SDIO function to access
+ *	@write_byte: byte to write
+ *	@addr: address to write to
+ *	@err_ret: optional status value from transfer
+ *
+ *	Performs a RAW (Read after Write) operation as defined by SDIO spec -
+ *	single byte is written to address space of a given SDIO function and
+ *	response is read back from the same address, both using single request.
+ *	If there is a problem with the operation, 0xff is returned and
+ *	@err_ret will contain the error code.
+ */
+u8 sdio_writeb_readb(struct sdio_func *func, u8 write_byte,
+	unsigned int addr, int *err_ret)
+{
+	int ret;
+	u8 val;
+
+	ret = mmc_io_rw_direct(func->card, 1, func->num, addr,
+			write_byte, &val);
+	if (err_ret)
+		*err_ret = ret;
+	if (ret)
+		val = 0xff;
+
+	return val;
+}
+EXPORT_SYMBOL_GPL(sdio_writeb_readb);
+
+/**
  *	sdio_memcpy_fromio - read a chunk of memory from a SDIO function
  *	@func: SDIO function to access
  *	@dst: buffer to store the data
@@ -657,14 +692,10 @@ void sdio_f0_writeb(struct sdio_func *func, unsigned char b, unsigned int addr,
 
 	BUG_ON(!func);
 
-	/* To by pass the check for Beceem Vendor Products */
-	if (func->card->cis.vendor != 0x392) {
-		if ((addr < 0xF0 || addr > 0xFF) &&
-			(!mmc_card_lenient_fn0(func->card))) {
-			if (err_ret)
-				*err_ret = -EINVAL;
-			return;
-		}
+	if ((addr < 0xF0 || addr > 0xFF) && (!mmc_card_lenient_fn0(func->card))) {
+		if (err_ret)
+			*err_ret = -EINVAL;
+		return;
 	}
 
 	ret = mmc_io_rw_direct(func->card, 1, 0, addr, b, NULL);
@@ -673,68 +704,51 @@ void sdio_f0_writeb(struct sdio_func *func, unsigned char b, unsigned int addr,
 }
 EXPORT_SYMBOL_GPL(sdio_f0_writeb);
 
-#ifdef CONFIG_MOT_WIMAX
-/* this is the bcm supported API for the cmd53 */
-int bcm_sdio_cmd53(struct sdio_func *func, int write,
-						unsigned addr, int incr_addr,
-						u8 *buf, unsigned size,
-						int bcm_fn0_cur_blk_size)
+/**
+ *	sdio_get_host_pm_caps - get host power management capabilities
+ *	@func: SDIO function attached to host
+ *
+ *	Returns a capability bitmask corresponding to power management
+ *	features supported by the host controller that the card function
+ *	might rely upon during a system suspend.  The host doesn't need
+ *	to be claimed, nor the function active, for this information to be
+ *	obtained.
+ */
+mmc_pm_flag_t sdio_get_host_pm_caps(struct sdio_func *func)
 {
-	unsigned remainder = size;
-	unsigned max_blocks;
-	int ret;
+	BUG_ON(!func);
+	BUG_ON(!func->card);
 
-	/* Do the bulk of the transfer using block mode (if supported). */
-	if (func->card->cccr.multi_block) {
-		/* Blocks per command is limited by host count, host transfer
-		 * size (we only use a single sg entry) and the maximum for
-		 * IO_RW_EXTENDED of 511 blocks. */
-		max_blocks = min(min(
-			func->card->host->max_blk_count,
-			func->card->host->max_seg_size / bcm_fn0_cur_blk_size),
-			511u);
+	return func->card->host->pm_caps;
+}
+EXPORT_SYMBOL_GPL(sdio_get_host_pm_caps);
 
-		while (remainder > bcm_fn0_cur_blk_size) {
-			unsigned blocks;
+/**
+ *	sdio_set_host_pm_flags - set wanted host power management capabilities
+ *	@func: SDIO function attached to host
+ *
+ *	Set a capability bitmask corresponding to wanted host controller
+ *	power management features for the upcoming suspend state.
+ *	This must be called, if needed, each time the suspend method of
+ *	the function driver is called, and must contain only bits that
+ *	were returned by sdio_get_host_pm_caps().
+ *	The host doesn't need to be claimed, nor the function active,
+ *	for this information to be set.
+ */
+int sdio_set_host_pm_flags(struct sdio_func *func, mmc_pm_flag_t flags)
+{
+	struct mmc_host *host;
 
-			blocks = remainder / bcm_fn0_cur_blk_size;
-			if (blocks > max_blocks)
-				blocks = max_blocks;
-			size = blocks * bcm_fn0_cur_blk_size;
+	BUG_ON(!func);
+	BUG_ON(!func->card);
 
-			ret = mmc_io_rw_extended(func->card, write,
-				0, addr, incr_addr, buf,
-				blocks, bcm_fn0_cur_blk_size);
-			if (ret)
-				return ret;
+	host = func->card->host;
 
-			remainder -= size;
-			buf += size;
-			if (incr_addr)
-				addr += size;
-		}
-	}
+	if (flags & ~host->pm_caps)
+		return -EINVAL;
 
-	/* Write the remainder using byte mode. */
-	while (remainder > 0) {
-		size = remainder;
-		if (size > bcm_fn0_cur_blk_size)
-			size = bcm_fn0_cur_blk_size;
-		if (size > 512)
-			size = 512; /* maximum size for byte mode */
-
-		ret = mmc_io_rw_extended(func->card, write, 0, addr,
-			 incr_addr, buf, 1, size);
-		if (ret)
-			return ret;
-
-		remainder -= size;
-		buf += size;
-		if (incr_addr)
-			addr += size;
-	}
+	/* function suspend methods are serialized, hence no lock needed */
+	host->pm_flags |= flags;
 	return 0;
 }
-EXPORT_SYMBOL_GPL(bcm_sdio_cmd53);
-#endif /* CONFIG_MOT_WIMAX */
-
+EXPORT_SYMBOL_GPL(sdio_set_host_pm_flags);

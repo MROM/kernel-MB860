@@ -20,9 +20,9 @@
 #include <linux/moduleparam.h>
 #include <linux/firmware.h>
 #include <linux/jiffies.h>
-#include <linux/kthread.h>
 #include <linux/list.h>
 #include <linux/netdevice.h>
+#include <linux/slab.h>
 #include <linux/spi/libertas_spi.h>
 #include <linux/spi/spi.h>
 
@@ -43,9 +43,6 @@ struct if_spi_card {
 	struct lbs_private		*priv;
 	struct libertas_spi_platform_data *pdata;
 
-	char				helper_fw_name[IF_SPI_FW_NAME_MAX];
-	char				main_fw_name[IF_SPI_FW_NAME_MAX];
-
 	/* The card ID and card revision, as reported by the hardware. */
 	u16				card_id;
 	u8				card_rev;
@@ -58,12 +55,8 @@ struct if_spi_card {
 	unsigned long			spu_reg_delay;
 
 	/* Handles all SPI communication (except for FW load) */
-	struct task_struct		*spi_thread;
-	int				run_thread;
-
-	/* Used to wake up the spi_thread */
-	struct semaphore		spi_ready;
-	struct semaphore		spi_thread_terminated;
+	struct workqueue_struct		*workqueue;
+	struct work_struct		packet_work;
 
 	u8				cmd_buffer[IF_SPI_CMD_BUF_SIZE];
 
@@ -82,7 +75,6 @@ static void free_if_spi_card(struct if_spi_card *card)
 	struct list_head *cursor, *next;
 	struct if_spi_packet *packet;
 
-	BUG_ON(card->run_thread);
 	list_for_each_safe(cursor, next, &card->cmd_packet_list) {
 		packet = container_of(cursor, struct if_spi_packet, list);
 		list_del(&packet->list);
@@ -97,10 +89,28 @@ static void free_if_spi_card(struct if_spi_card *card)
 	kfree(card);
 }
 
-static struct chip_ident chip_id_to_device_name[] = {
-	{ .chip_id = 0x04, .name = 8385 },
-	{ .chip_id = 0x0b, .name = 8686 },
+#define MODEL_8385	0x04
+#define MODEL_8686	0x0b
+#define MODEL_8688	0x10
+
+static const struct lbs_fw_table fw_table[] = {
+	{ MODEL_8385, "libertas/gspi8385_helper.bin", "libertas/gspi8385.bin" },
+	{ MODEL_8385, "libertas/gspi8385_hlp.bin", "libertas/gspi8385.bin" },
+	{ MODEL_8686, "libertas/gspi8686_v9_helper.bin", "libertas/gspi8686_v9.bin" },
+	{ MODEL_8686, "libertas/gspi8686_hlp.bin", "libertas/gspi8686.bin" },
+	{ MODEL_8688, "libertas/gspi8688_helper.bin", "libertas/gspi8688.bin" },
+	{ 0, NULL, NULL }
 };
+MODULE_FIRMWARE("libertas/gspi8385_helper.bin");
+MODULE_FIRMWARE("libertas/gspi8385_hlp.bin");
+MODULE_FIRMWARE("libertas/gspi8385.bin");
+MODULE_FIRMWARE("libertas/gspi8686_v9_helper.bin");
+MODULE_FIRMWARE("libertas/gspi8686_v9.bin");
+MODULE_FIRMWARE("libertas/gspi8686_hlp.bin");
+MODULE_FIRMWARE("libertas/gspi8686.bin");
+MODULE_FIRMWARE("libertas/gspi8688_helper.bin");
+MODULE_FIRMWARE("libertas/gspi8688.bin");
+
 
 /*
  * SPI Interface Unit Routines
@@ -426,26 +436,20 @@ static int spu_init(struct if_spi_card *card, int use_dummy_writes)
  * Firmware Loading
  */
 
-static int if_spi_prog_helper_firmware(struct if_spi_card *card)
+static int if_spi_prog_helper_firmware(struct if_spi_card *card,
+					const struct firmware *firmware)
 {
 	int err = 0;
-	const struct firmware *firmware = NULL;
 	int bytes_remaining;
 	const u8 *fw;
 	u8 temp[HELPER_FW_LOAD_CHUNK_SZ];
-	struct spi_device *spi = card->spi;
 
 	lbs_deb_enter(LBS_DEB_SPI);
 
 	err = spu_set_interrupt_mode(card, 1, 0);
 	if (err)
 		goto out;
-	/* Get helper firmware image */
-	err = request_firmware(&firmware, card->helper_fw_name, &spi->dev);
-	if (err) {
-		lbs_pr_err("request_firmware failed with err = %d\n", err);
-		goto out;
-	}
+
 	bytes_remaining = firmware->size;
 	fw = firmware->data;
 
@@ -456,13 +460,13 @@ static int if_spi_prog_helper_firmware(struct if_spi_card *card)
 		err = spu_write_u16(card, IF_SPI_SCRATCH_1_REG,
 					HELPER_FW_LOAD_CHUNK_SZ);
 		if (err)
-			goto release_firmware;
+			goto out;
 
 		err = spu_wait_for_u16(card, IF_SPI_HOST_INT_STATUS_REG,
 					IF_SPI_HIST_CMD_DOWNLOAD_RDY,
 					IF_SPI_HIST_CMD_DOWNLOAD_RDY);
 		if (err)
-			goto release_firmware;
+			goto out;
 
 		/* Feed the data into the command read/write port reg
 		 * in chunks of 64 bytes */
@@ -473,16 +477,16 @@ static int if_spi_prog_helper_firmware(struct if_spi_card *card)
 		err = spu_write(card, IF_SPI_CMD_RDWRPORT_REG,
 					temp, HELPER_FW_LOAD_CHUNK_SZ);
 		if (err)
-			goto release_firmware;
+			goto out;
 
 		/* Interrupt the boot code */
 		err = spu_write_u16(card, IF_SPI_HOST_INT_STATUS_REG, 0);
 		if (err)
-			goto release_firmware;
+			goto out;
 		err = spu_write_u16(card, IF_SPI_CARD_INT_CAUSE_REG,
 				       IF_SPI_CIC_CMD_DOWNLOAD_OVER);
 		if (err)
-			goto release_firmware;
+			goto out;
 		bytes_remaining -= HELPER_FW_LOAD_CHUNK_SZ;
 		fw += HELPER_FW_LOAD_CHUNK_SZ;
 	}
@@ -492,18 +496,16 @@ static int if_spi_prog_helper_firmware(struct if_spi_card *card)
 	 * bootloader. This completes the helper download. */
 	err = spu_write_u16(card, IF_SPI_SCRATCH_1_REG, FIRMWARE_DNLD_OK);
 	if (err)
-		goto release_firmware;
+		goto out;
 	err = spu_write_u16(card, IF_SPI_HOST_INT_STATUS_REG, 0);
 	if (err)
-		goto release_firmware;
+		goto out;
 	err = spu_write_u16(card, IF_SPI_CARD_INT_CAUSE_REG,
 				IF_SPI_CIC_CMD_DOWNLOAD_OVER);
-		goto release_firmware;
+		goto out;
 
 	lbs_deb_spi("waiting for helper to boot...\n");
 
-release_firmware:
-	release_firmware(firmware);
 out:
 	if (err)
 		lbs_pr_err("failed to load helper firmware (err=%d)\n", err);
@@ -550,13 +552,12 @@ static int if_spi_prog_main_firmware_check_len(struct if_spi_card *card,
 	return len;
 }
 
-static int if_spi_prog_main_firmware(struct if_spi_card *card)
+static int if_spi_prog_main_firmware(struct if_spi_card *card,
+					const struct firmware *firmware)
 {
 	int len, prev_len;
 	int bytes, crc_err = 0, err = 0;
-	const struct firmware *firmware = NULL;
 	const u8 *fw;
-	struct spi_device *spi = card->spi;
 	u16 num_crc_errs;
 
 	lbs_deb_enter(LBS_DEB_SPI);
@@ -565,19 +566,11 @@ static int if_spi_prog_main_firmware(struct if_spi_card *card)
 	if (err)
 		goto out;
 
-	/* Get firmware image */
-	err = request_firmware(&firmware, card->main_fw_name, &spi->dev);
-	if (err) {
-		lbs_pr_err("%s: can't get firmware '%s' from kernel. "
-			"err = %d\n", __func__, card->main_fw_name, err);
-		goto out;
-	}
-
 	err = spu_wait_for_u16(card, IF_SPI_SCRATCH_1_REG, 0, 0);
 	if (err) {
 		lbs_pr_err("%s: timed out waiting for initial "
 			   "scratch reg = 0\n", __func__);
-		goto release_firmware;
+		goto out;
 	}
 
 	num_crc_errs = 0;
@@ -587,7 +580,7 @@ static int if_spi_prog_main_firmware(struct if_spi_card *card)
 	while ((len = if_spi_prog_main_firmware_check_len(card, &crc_err))) {
 		if (len < 0) {
 			err = len;
-			goto release_firmware;
+			goto out;
 		}
 		if (bytes < 0) {
 			/* If there are no more bytes left, we would normally
@@ -602,7 +595,7 @@ static int if_spi_prog_main_firmware(struct if_spi_card *card)
 				lbs_pr_err("Too many CRC errors encountered "
 					   "in firmware load.\n");
 				err = -EIO;
-				goto release_firmware;
+				goto out;
 			}
 		} else {
 			/* Previous transfer succeeded. Advance counters. */
@@ -617,15 +610,15 @@ static int if_spi_prog_main_firmware(struct if_spi_card *card)
 
 		err = spu_write_u16(card, IF_SPI_HOST_INT_STATUS_REG, 0);
 		if (err)
-			goto release_firmware;
+			goto out;
 		err = spu_write(card, IF_SPI_CMD_RDWRPORT_REG,
 				card->cmd_buffer, len);
 		if (err)
-			goto release_firmware;
+			goto out;
 		err = spu_write_u16(card, IF_SPI_CARD_INT_CAUSE_REG ,
 					IF_SPI_CIC_CMD_DOWNLOAD_OVER);
 		if (err)
-			goto release_firmware;
+			goto out;
 		prev_len = len;
 	}
 	if (bytes > prev_len) {
@@ -638,11 +631,8 @@ static int if_spi_prog_main_firmware(struct if_spi_card *card)
 					SUCCESSFUL_FW_DOWNLOAD_MAGIC);
 	if (err) {
 		lbs_pr_err("failed to confirm the firmware download\n");
-		goto release_firmware;
+		goto out;
 	}
-
-release_firmware:
-	release_firmware(firmware);
 
 out:
 	if (err)
@@ -654,7 +644,7 @@ out:
 /*
  * SPI Transfer Thread
  *
- * The SPI thread handles all SPI transfers, so there is no need for a lock.
+ * The SPI worker handles all SPI transfers, so there is no need for a lock.
  */
 
 /* Move a command from the card to the host */
@@ -832,105 +822,88 @@ out:
 		lbs_pr_err("%s: error %d\n", __func__, err);
 }
 
-static int lbs_spi_thread(void *data)
+static void if_spi_host_to_card_worker(struct work_struct *work)
 {
 	int err;
-	struct if_spi_card *card = data;
+	struct if_spi_card *card;
 	u16 hiStatus;
 	unsigned long flags;
 	struct if_spi_packet *packet;
 
-	while (1) {
-		/* Wait to be woken up by one of two things.  First, our ISR
-		 * could tell us that something happened on the WLAN.
-		 * Secondly, libertas could call hw_host_to_card with more
-		 * data, which we might be able to send.
-		 */
-		do {
-			err = down_interruptible(&card->spi_ready);
-			if (!card->run_thread) {
-				up(&card->spi_thread_terminated);
-				do_exit(0);
-			}
-		} while (err == EINTR);
+	card = container_of(work, struct if_spi_card, packet_work);
 
-		/* Read the host interrupt status register to see what we
-		 * can do. */
-		err = spu_read_u16(card, IF_SPI_HOST_INT_STATUS_REG,
-					&hiStatus);
-		if (err) {
-			lbs_pr_err("I/O error\n");
+	lbs_deb_enter(LBS_DEB_SPI);
+
+	/* Read the host interrupt status register to see what we
+	 * can do. */
+	err = spu_read_u16(card, IF_SPI_HOST_INT_STATUS_REG,
+				&hiStatus);
+	if (err) {
+		lbs_pr_err("I/O error\n");
+		goto err;
+	}
+
+	if (hiStatus & IF_SPI_HIST_CMD_UPLOAD_RDY) {
+		err = if_spi_c2h_cmd(card);
+		if (err)
 			goto err;
+	}
+	if (hiStatus & IF_SPI_HIST_RX_UPLOAD_RDY) {
+		err = if_spi_c2h_data(card);
+		if (err)
+			goto err;
+	}
+
+	/* workaround: in PS mode, the card does not set the Command
+	 * Download Ready bit, but it sets TX Download Ready. */
+	if (hiStatus & IF_SPI_HIST_CMD_DOWNLOAD_RDY ||
+	   (card->priv->psstate != PS_STATE_FULL_POWER &&
+	    (hiStatus & IF_SPI_HIST_TX_DOWNLOAD_RDY))) {
+		/* This means two things. First of all,
+		 * if there was a previous command sent, the card has
+		 * successfully received it.
+		 * Secondly, it is now ready to download another
+		 * command.
+		 */
+		lbs_host_to_card_done(card->priv);
+
+		/* Do we have any command packets from the host to
+		 * send? */
+		packet = NULL;
+		spin_lock_irqsave(&card->buffer_lock, flags);
+		if (!list_empty(&card->cmd_packet_list)) {
+			packet = (struct if_spi_packet *)(card->
+					cmd_packet_list.next);
+			list_del(&packet->list);
 		}
+		spin_unlock_irqrestore(&card->buffer_lock, flags);
 
-		if (hiStatus & IF_SPI_HIST_CMD_UPLOAD_RDY)
-			err = if_spi_c2h_cmd(card);
-			if (err)
-				goto err;
-		if (hiStatus & IF_SPI_HIST_RX_UPLOAD_RDY)
-			err = if_spi_c2h_data(card);
-			if (err)
-				goto err;
-
-		/* workaround: in PS mode, the card does not set the Command
-		 * Download Ready bit, but it sets TX Download Ready. */
-		if (hiStatus & IF_SPI_HIST_CMD_DOWNLOAD_RDY ||
-		   (card->priv->psstate != PS_STATE_FULL_POWER &&
-		    (hiStatus & IF_SPI_HIST_TX_DOWNLOAD_RDY))) {
-			/* This means two things. First of all,
-			 * if there was a previous command sent, the card has
-			 * successfully received it.
-			 * Secondly, it is now ready to download another
-			 * command.
-			 */
-			lbs_host_to_card_done(card->priv);
-
-			/* Do we have any command packets from the host to
-			 * send? */
-			packet = NULL;
-			spin_lock_irqsave(&card->buffer_lock, flags);
-			if (!list_empty(&card->cmd_packet_list)) {
-				packet = (struct if_spi_packet *)(card->
-						cmd_packet_list.next);
-				list_del(&packet->list);
-			}
-			spin_unlock_irqrestore(&card->buffer_lock, flags);
-
-			if (packet)
-				if_spi_h2c(card, packet, MVMS_CMD);
+		if (packet)
+			if_spi_h2c(card, packet, MVMS_CMD);
+	}
+	if (hiStatus & IF_SPI_HIST_TX_DOWNLOAD_RDY) {
+		/* Do we have any data packets from the host to
+		 * send? */
+		packet = NULL;
+		spin_lock_irqsave(&card->buffer_lock, flags);
+		if (!list_empty(&card->data_packet_list)) {
+			packet = (struct if_spi_packet *)(card->
+					data_packet_list.next);
+			list_del(&packet->list);
 		}
-		if (hiStatus & IF_SPI_HIST_TX_DOWNLOAD_RDY) {
-			/* Do we have any data packets from the host to
-			 * send? */
-			packet = NULL;
-			spin_lock_irqsave(&card->buffer_lock, flags);
-			if (!list_empty(&card->data_packet_list)) {
-				packet = (struct if_spi_packet *)(card->
-						data_packet_list.next);
-				list_del(&packet->list);
-			}
-			spin_unlock_irqrestore(&card->buffer_lock, flags);
+		spin_unlock_irqrestore(&card->buffer_lock, flags);
 
-			if (packet)
-				if_spi_h2c(card, packet, MVMS_DAT);
-		}
-		if (hiStatus & IF_SPI_HIST_CARD_EVENT)
-			if_spi_e2h(card);
+		if (packet)
+			if_spi_h2c(card, packet, MVMS_DAT);
+	}
+	if (hiStatus & IF_SPI_HIST_CARD_EVENT)
+		if_spi_e2h(card);
 
 err:
-		if (err)
-			lbs_pr_err("%s: got error %d\n", __func__, err);
-	}
-}
+	if (err)
+		lbs_pr_err("%s: got error %d\n", __func__, err);
 
-/* Block until lbs_spi_thread thread has terminated */
-static void if_spi_terminate_spi_thread(struct if_spi_card *card)
-{
-	/* It would be nice to use kthread_stop here, but that function
-	 * can't wake threads waiting for a semaphore. */
-	card->run_thread = 0;
-	up(&card->spi_ready);
-	down(&card->spi_thread_terminated);
+	lbs_deb_leave(LBS_DEB_SPI);
 }
 
 /*
@@ -983,8 +956,8 @@ static int if_spi_host_to_card(struct lbs_private *priv,
 		break;
 	}
 
-	/* Wake up the spi thread */
-	up(&card->spi_ready);
+	/* Queue spi xfer work */
+	queue_work(card->workqueue, &card->packet_work);
 out:
 	lbs_deb_leave_args(LBS_DEB_SPI, "err=%d", err);
 	return err;
@@ -994,13 +967,14 @@ out:
  * Host Interrupts
  *
  * Service incoming interrupts from the WLAN device. We can't sleep here, so
- * don't try to talk on the SPI bus, just wake up the SPI thread.
+ * don't try to talk on the SPI bus, just queue the SPI xfer work.
  */
 static irqreturn_t if_spi_host_interrupt(int irq, void *dev_id)
 {
 	struct if_spi_card *card = dev_id;
 
-	up(&card->spi_ready);
+	queue_work(card->workqueue, &card->packet_work);
+
 	return IRQ_HANDLED;
 }
 
@@ -1008,23 +982,79 @@ static irqreturn_t if_spi_host_interrupt(int irq, void *dev_id)
  * SPI callbacks
  */
 
-static int if_spi_calculate_fw_names(u16 card_id,
-			      char *helper_fw, char *main_fw)
+static int if_spi_init_card(struct if_spi_card *card)
 {
-	int i;
-	for (i = 0; i < ARRAY_SIZE(chip_id_to_device_name); ++i) {
-		if (card_id == chip_id_to_device_name[i].chip_id)
-			break;
+	struct spi_device *spi = card->spi;
+	int err, i;
+	u32 scratch;
+	const struct firmware *helper = NULL;
+	const struct firmware *mainfw = NULL;
+
+	lbs_deb_enter(LBS_DEB_SPI);
+
+	err = spu_init(card, card->pdata->use_dummy_writes);
+	if (err)
+		goto out;
+	err = spu_get_chip_revision(card, &card->card_id, &card->card_rev);
+	if (err)
+		goto out;
+
+	err = spu_read_u32(card, IF_SPI_SCRATCH_4_REG, &scratch);
+	if (err)
+		goto out;
+	if (scratch == SUCCESSFUL_FW_DOWNLOAD_MAGIC)
+		lbs_deb_spi("Firmware is already loaded for "
+			    "Marvell WLAN 802.11 adapter\n");
+	else {
+		/* Check if we support this card */
+		for (i = 0; i < ARRAY_SIZE(fw_table); i++) {
+			if (card->card_id == fw_table[i].model)
+				break;
+		}
+		if (i == ARRAY_SIZE(fw_table)) {
+			lbs_pr_err("Unsupported chip_id: 0x%02x\n",
+					card->card_id);
+			err = -ENODEV;
+			goto out;
+		}
+
+		err = lbs_get_firmware(&card->spi->dev, NULL, NULL,
+					card->card_id, &fw_table[0], &helper,
+					&mainfw);
+		if (err) {
+			lbs_pr_err("failed to find firmware (%d)\n", err);
+			goto out;
+		}
+
+		lbs_deb_spi("Initializing FW for Marvell WLAN 802.11 adapter "
+				"(chip_id = 0x%04x, chip_rev = 0x%02x) "
+				"attached to SPI bus_num %d, chip_select %d. "
+				"spi->max_speed_hz=%d\n",
+				card->card_id, card->card_rev,
+				spi->master->bus_num, spi->chip_select,
+				spi->max_speed_hz);
+		err = if_spi_prog_helper_firmware(card, helper);
+		if (err)
+			goto out;
+		err = if_spi_prog_main_firmware(card, mainfw);
+		if (err)
+			goto out;
+		lbs_deb_spi("loaded FW for Marvell WLAN 802.11 adapter\n");
 	}
-	if (i == ARRAY_SIZE(chip_id_to_device_name)) {
-		lbs_pr_err("Unsupported chip_id: 0x%02x\n", card_id);
-		return -EAFNOSUPPORT;
-	}
-	snprintf(helper_fw, IF_SPI_FW_NAME_MAX, "libertas/gspi%d_hlp.bin",
-		 chip_id_to_device_name[i].name);
-	snprintf(main_fw, IF_SPI_FW_NAME_MAX, "libertas/gspi%d.bin",
-		 chip_id_to_device_name[i].name);
-	return 0;
+
+	err = spu_set_interrupt_mode(card, 0, 1);
+	if (err)
+		goto out;
+
+out:
+	if (helper)
+		release_firmware(helper);
+	if (mainfw)
+		release_firmware(mainfw);
+
+	lbs_deb_leave_args(LBS_DEB_SPI, "err %d\n", err);
+
+	return err;
 }
 
 static int __devinit if_spi_probe(struct spi_device *spi)
@@ -1033,8 +1063,6 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 	struct lbs_private *priv = NULL;
 	struct libertas_spi_platform_data *pdata = spi->dev.platform_data;
 	int err = 0;
-	u32 scratch;
-	struct sched_param param = { .sched_priority = 1 };
 
 	lbs_deb_enter(LBS_DEB_SPI);
 
@@ -1053,57 +1081,21 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 	card = kzalloc(sizeof(struct if_spi_card), GFP_KERNEL);
 	if (!card) {
 		err = -ENOMEM;
-		goto out;
+		goto teardown;
 	}
 	spi_set_drvdata(spi, card);
 	card->pdata = pdata;
 	card->spi = spi;
 	card->prev_xfer_time = jiffies;
 
-	sema_init(&card->spi_ready, 0);
-	sema_init(&card->spi_thread_terminated, 0);
 	INIT_LIST_HEAD(&card->cmd_packet_list);
 	INIT_LIST_HEAD(&card->data_packet_list);
 	spin_lock_init(&card->buffer_lock);
 
 	/* Initialize the SPI Interface Unit */
-	err = spu_init(card, pdata->use_dummy_writes);
-	if (err)
-		goto free_card;
-	err = spu_get_chip_revision(card, &card->card_id, &card->card_rev);
-	if (err)
-		goto free_card;
 
 	/* Firmware load */
-	err = spu_read_u32(card, IF_SPI_SCRATCH_4_REG, &scratch);
-	if (err)
-		goto free_card;
-	if (scratch == SUCCESSFUL_FW_DOWNLOAD_MAGIC)
-		lbs_deb_spi("Firmware is already loaded for "
-			    "Marvell WLAN 802.11 adapter\n");
-	else {
-		err = if_spi_calculate_fw_names(card->card_id,
-				card->helper_fw_name, card->main_fw_name);
-		if (err)
-			goto free_card;
-
-		lbs_deb_spi("Initializing FW for Marvell WLAN 802.11 adapter "
-				"(chip_id = 0x%04x, chip_rev = 0x%02x) "
-				"attached to SPI bus_num %d, chip_select %d. "
-				"spi->max_speed_hz=%d\n",
-				card->card_id, card->card_rev,
-				spi->master->bus_num, spi->chip_select,
-				spi->max_speed_hz);
-		err = if_spi_prog_helper_firmware(card);
-		if (err)
-			goto free_card;
-		err = if_spi_prog_main_firmware(card);
-		if (err)
-			goto free_card;
-		lbs_deb_spi("loaded FW for Marvell WLAN 802.11 adapter\n");
-	}
-
-	err = spu_set_interrupt_mode(card, 0, 1);
+	err = if_spi_init_card(card);
 	if (err)
 		goto free_card;
 
@@ -1117,25 +1109,20 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 	card->priv = priv;
 	priv->card = card;
 	priv->hw_host_to_card = if_spi_host_to_card;
+	priv->enter_deep_sleep = NULL;
+	priv->exit_deep_sleep = NULL;
+	priv->reset_deep_sleep_wakeup = NULL;
 	priv->fw_ready = 1;
 
 	/* Initialize interrupt handling stuff. */
-	card->run_thread = 1;
-	card->spi_thread = kthread_run(lbs_spi_thread, card, "lbs_spi_thread");
-	if (IS_ERR(card->spi_thread)) {
-		card->run_thread = 0;
-		err = PTR_ERR(card->spi_thread);
-		lbs_pr_err("error creating SPI thread: err=%d\n", err);
-		goto remove_card;
-	}
-	if (sched_setscheduler(card->spi_thread, SCHED_FIFO, &param))
-		lbs_pr_err("Error setting scheduler, using default.\n");
+	card->workqueue = create_workqueue("libertas_spi");
+	INIT_WORK(&card->packet_work, if_spi_host_to_card_worker);
 
 	err = request_irq(spi->irq, if_spi_host_interrupt,
 			IRQF_TRIGGER_FALLING, "libertas_spi", card);
 	if (err) {
 		lbs_pr_err("can't get host irq line-- request_irq failed\n");
-		goto terminate_thread;
+		goto terminate_workqueue;
 	}
 
 	/* Start the card.
@@ -1152,12 +1139,15 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 
 release_irq:
 	free_irq(spi->irq, card);
-terminate_thread:
-	if_spi_terminate_spi_thread(card);
-remove_card:
+terminate_workqueue:
+	flush_workqueue(card->workqueue);
+	destroy_workqueue(card->workqueue);
 	lbs_remove_card(priv); /* will call free_netdev */
 free_card:
 	free_if_spi_card(card);
+teardown:
+	if (pdata->teardown)
+		pdata->teardown(spi);
 out:
 	lbs_deb_leave_args(LBS_DEB_SPI, "err %d\n", err);
 	return err;
@@ -1174,9 +1164,9 @@ static int __devexit libertas_spi_remove(struct spi_device *spi)
 	lbs_stop_card(priv);
 	lbs_remove_card(priv); /* will call free_netdev */
 
-	priv->surpriseremoved = 1;
 	free_irq(spi->irq, card);
-	if_spi_terminate_spi_thread(card);
+	flush_workqueue(card->workqueue);
+	destroy_workqueue(card->workqueue);
 	if (card->pdata->teardown)
 		card->pdata->teardown(spi);
 	free_if_spi_card(card);

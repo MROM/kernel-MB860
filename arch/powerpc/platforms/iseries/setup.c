@@ -256,7 +256,7 @@ static unsigned long iSeries_process_mainstore_vpd(struct MemoryBlock *mb_array,
 		mem_blocks = iSeries_process_Condor_mainstore_vpd(mb_array,
 				max_entries);
 
-	printk("Mainstore_VPD: numMemoryBlocks = %ld \n", mem_blocks);
+	printk("Mainstore_VPD: numMemoryBlocks = %ld\n", mem_blocks);
 	for (i = 0; i < mem_blocks; ++i) {
 		printk("Mainstore_VPD: block %3ld logical chunks %016lx - %016lx\n"
 		       "                             abs chunks %016lx - %016lx\n",
@@ -680,6 +680,7 @@ void * __init iSeries_early_setup(void)
 	 * on but calling this function multiple times is fine.
 	 */
 	identify_cpu(0, mfspr(SPRN_PVR));
+	initialise_paca(&boot_paca, 0);
 
 	powerpc_firmware_features |= FW_FEATURE_ISERIES;
 	powerpc_firmware_features |= FW_FEATURE_LPAR;

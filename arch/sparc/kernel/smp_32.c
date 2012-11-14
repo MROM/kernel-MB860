@@ -32,6 +32,7 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 #include <asm/cpudata.h>
+#include <asm/leon.h>
 
 #include "irq.h"
 
@@ -52,6 +53,7 @@ cpumask_t smp_commenced_mask = CPU_MASK_NONE;
 void __cpuinit smp_store_cpu_info(int id)
 {
 	int cpu_node;
+	int mid;
 
 	cpu_data(id).udelay_val = loops_per_jiffy;
 
@@ -59,10 +61,13 @@ void __cpuinit smp_store_cpu_info(int id)
 	cpu_data(id).clock_tick = prom_getintdefault(cpu_node,
 						     "clock-frequency", 0);
 	cpu_data(id).prom_node = cpu_node;
-	cpu_data(id).mid = cpu_get_hwmid(cpu_node);
+	mid = cpu_get_hwmid(cpu_node);
 
-	if (cpu_data(id).mid < 0)
-		panic("No MID found for CPU%d at node 0x%08d", id, cpu_node);
+	if (mid < 0) {
+		printk(KERN_NOTICE "No MID found for CPU%d at node 0x%08d", id, cpu_node);
+		mid = 0;
+	}
+	cpu_data(id).mid = mid;
 }
 
 void __init smp_cpus_done(unsigned int max_cpus)
@@ -95,6 +100,9 @@ void __init smp_cpus_done(unsigned int max_cpus)
 		break;
 	case sun4d:
 		smp4d_smp_done();
+		break;
+	case sparc_leon:
+		leon_smp_done();
 		break;
 	case sun4e:
 		printk("SUN4E\n");
@@ -306,6 +314,9 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	case sun4d:
 		smp4d_boot_cpus();
 		break;
+	case sparc_leon:
+		leon_boot_cpus();
+		break;
 	case sun4e:
 		printk("SUN4E\n");
 		BUG();
@@ -375,6 +386,9 @@ int __cpuinit __cpu_up(unsigned int cpu)
 		break;
 	case sun4d:
 		ret = smp4d_boot_one_cpu(cpu);
+		break;
+	case sparc_leon:
+		ret = leon_boot_one_cpu(cpu);
 		break;
 	case sun4e:
 		printk("SUN4E\n");

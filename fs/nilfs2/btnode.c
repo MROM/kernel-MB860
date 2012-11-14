@@ -27,26 +27,17 @@
 #include <linux/buffer_head.h>
 #include <linux/mm.h>
 #include <linux/backing-dev.h>
+#include <linux/gfp.h>
 #include "nilfs.h"
 #include "mdt.h"
 #include "dat.h"
 #include "page.h"
 #include "btnode.h"
 
-
-static const struct address_space_operations def_btnode_aops = {
-	.sync_page		= block_sync_page,
-};
-
 void nilfs_btnode_cache_init(struct address_space *btnc,
 			     struct backing_dev_info *bdi)
 {
-	btnc->host = NULL;  /* can safely set to host inode ? */
-	btnc->flags = 0;
-	mapping_set_gfp_mask(btnc, GFP_NOFS);
-	btnc->assoc_mapping = NULL;
-	btnc->backing_dev_info = bdi;
-	btnc->a_ops = &def_btnode_aops;
+	nilfs_mapping_init(btnc, bdi);
 }
 
 void nilfs_btnode_cache_clear(struct address_space *btnc)
@@ -55,12 +46,39 @@ void nilfs_btnode_cache_clear(struct address_space *btnc)
 	truncate_inode_pages(btnc, 0);
 }
 
+struct buffer_head *
+nilfs_btnode_create_block(struct address_space *btnc, __u64 blocknr)
+{
+	struct inode *inode = NILFS_BTNC_I(btnc);
+	struct buffer_head *bh;
+
+	bh = nilfs_grab_buffer(inode, btnc, blocknr, 1 << BH_NILFS_Node);
+	if (unlikely(!bh))
+		return NULL;
+
+	if (unlikely(buffer_mapped(bh) || buffer_uptodate(bh) ||
+		     buffer_dirty(bh))) {
+		brelse(bh);
+		BUG();
+	}
+	memset(bh->b_data, 0, 1 << inode->i_blkbits);
+	bh->b_bdev = NILFS_I_NILFS(inode)->ns_bdev;
+	bh->b_blocknr = blocknr;
+	set_buffer_mapped(bh);
+	set_buffer_uptodate(bh);
+
+	unlock_page(bh->b_page);
+	page_cache_release(bh->b_page);
+	return bh;
+}
+
 int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
-			      sector_t pblocknr, struct buffer_head **pbh,
-			      int newblk)
+			      sector_t pblocknr, int mode,
+			      struct buffer_head **pbh, sector_t *submit_ptr)
 {
 	struct buffer_head *bh;
 	struct inode *inode = NILFS_BTNC_I(btnc);
+	struct page *page;
 	int err;
 
 	bh = nilfs_grab_buffer(inode, btnc, blocknr, 1 << BH_NILFS_Node);
@@ -68,19 +86,7 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 		return -ENOMEM;
 
 	err = -EEXIST; /* internal code */
-	if (newblk) {
-		if (unlikely(buffer_mapped(bh) || buffer_uptodate(bh) ||
-			     buffer_dirty(bh))) {
-			brelse(bh);
-			BUG();
-		}
-		memset(bh->b_data, 0, 1 << inode->i_blkbits);
-		bh->b_bdev = NILFS_I_NILFS(inode)->ns_bdev;
-		bh->b_blocknr = blocknr;
-		set_buffer_mapped(bh);
-		set_buffer_uptodate(bh);
-		goto found;
-	}
+	page = bh->b_page;
 
 	if (buffer_uptodate(bh) || buffer_dirty(bh))
 		goto found;
@@ -88,8 +94,7 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 	if (pblocknr == 0) {
 		pblocknr = blocknr;
 		if (inode->i_ino != NILFS_DAT_INO) {
-			struct inode *dat =
-				nilfs_dat_inode(NILFS_I_NILFS(inode));
+			struct inode *dat = NILFS_I_NILFS(inode)->ns_dat;
 
 			/* blocknr is a virtual block number */
 			err = nilfs_dat_translate(dat, blocknr, &pblocknr);
@@ -99,7 +104,16 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 			}
 		}
 	}
-	lock_buffer(bh);
+
+	if (mode == READA) {
+		if (pblocknr != *submit_ptr + 1 || !trylock_buffer(bh)) {
+			err = -EBUSY; /* internal code */
+			brelse(bh);
+			goto out_locked;
+		}
+	} else { /* mode == READ */
+		lock_buffer(bh);
+	}
 	if (buffer_uptodate(bh)) {
 		unlock_buffer(bh);
 		err = -EEXIST; /* internal code */
@@ -110,37 +124,17 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 	bh->b_blocknr = pblocknr; /* set block address for read */
 	bh->b_end_io = end_buffer_read_sync;
 	get_bh(bh);
-	submit_bh(READ, bh);
+	submit_bh(mode, bh);
 	bh->b_blocknr = blocknr; /* set back to the given block address */
+	*submit_ptr = pblocknr;
 	err = 0;
 found:
 	*pbh = bh;
 
 out_locked:
-	unlock_page(bh->b_page);
-	page_cache_release(bh->b_page);
+	unlock_page(page);
+	page_cache_release(page);
 	return err;
-}
-
-int nilfs_btnode_get(struct address_space *btnc, __u64 blocknr,
-		     sector_t pblocknr, struct buffer_head **pbh, int newblk)
-{
-	struct buffer_head *bh;
-	int err;
-
-	err = nilfs_btnode_submit_block(btnc, blocknr, pblocknr, pbh, newblk);
-	if (err == -EEXIST) /* internal code (cache hit) */
-		return 0;
-	if (unlikely(err))
-		return err;
-
-	bh = *pbh;
-	wait_on_buffer(bh);
-	if (!buffer_uptodate(bh)) {
-		brelse(bh);
-		return -EIO;
-	}
-	return 0;
 }
 
 /**
@@ -231,12 +225,13 @@ retry:
 		unlock_page(obh->b_page);
 	}
 
-	err = nilfs_btnode_get(btnc, newkey, 0, &nbh, 1);
-	if (likely(!err)) {
-		BUG_ON(nbh == obh);
-		ctxt->newbh = nbh;
-	}
-	return err;
+	nbh = nilfs_btnode_create_block(btnc, newkey);
+	if (!nbh)
+		return -ENOMEM;
+
+	BUG_ON(nbh == obh);
+	ctxt->newbh = nbh;
+	return 0;
 
  failed_unlock:
 	unlock_page(obh->b_page);

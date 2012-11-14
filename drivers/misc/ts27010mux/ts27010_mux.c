@@ -55,6 +55,7 @@
 #include <linux/serial.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
@@ -77,7 +78,7 @@
 #define TS0710MUX_MINOR_START 0
 
 /* 2500ms, for BP UART hardware flow control AP UART  */
-#define TS0710MUX_TIME_OUT 2500
+#define TS0710MUX_TIME_OUT 250
 
 #define CRC_VALID 0xcf
 
@@ -94,10 +95,13 @@
 #define CMDTAG 0x55
 #define DATATAG 0xAA
 
-static const u8 tty2dlci[NR_MUXS] =
-    { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-static const u8 iscmdtty[NR_MUXS] =
-    { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+static const u8 tty2dlci[NR_MUXS] = {
+	1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+};
+
+static const u8 iscmdtty[NR_MUXS] = {
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+};
 
 struct dlci_tty {
 	const u8 cmdtty;
@@ -146,7 +150,7 @@ static struct ts0710_con ts0710_connection;
 
 #ifdef DEBUG
 
-static int debug = 0;
+static int debug;
 
 module_param_named(debug_level, debug, int, S_IRUGO | S_IWUSR);
 
@@ -375,7 +379,7 @@ static int ts0710_pkt_send(struct ts0710_con *ts0710, u8 *data)
 	if (!ts27010mux_tty) {
 		pr_warning("ts27010: ldisc closed.  discarding %d bytes\n",
 			   TS0710_FRAME_SIZE(len));
-		return TS0710_FRAME_SIZE(len);
+		return -ENODEV;
 	}
 
 	res = ts27010_ldisc_send(ts27010mux_tty, data,
@@ -500,28 +504,7 @@ static void *ts27010_mcc_data(u8 *frame)
 {
 	return ((struct mcc_short_frame *)ts0710_pkt_data(frame))->value;
 }
-#ifndef CONFIG_ARCH_TEGRA
-#warning unused functions ts27010_send_fcon, ts27010_send_fcoff
-static int ts27010_send_fcon(struct ts0710_con *ts0710, int cr)
-{
-	u8 frame[TS0710_MCC_FRAME_SIZE(0)];
 
-	ts_debug(DBG_CMD, "ts27010: sending FCON MCC\n");
-	ts27010_mcc_set_header(frame, 0, cr, FCON);
-
-	return ts0710_pkt_send(ts0710, frame);
-}
-
-static int ts27010_send_fcoff(struct ts0710_con *ts0710, int cr)
-{
-	u8 frame[TS0710_MCC_FRAME_SIZE(0)];
-
-	ts_debug(DBG_CMD, "ts27010: sending FCOFF MCC\n");
-	ts27010_mcc_set_header(frame, 0, cr, FCOFF);
-
-	return ts0710_pkt_send(ts0710, frame);
-}
-#endif //CONFIG_ARCH_TEGRA
 static int ts27010_send_pn(struct ts0710_con *ts0710, u8 prior, int frame_size,
 			   u8 credit_flow, u8 credits, u8 dlci, u8 cr)
 {
@@ -733,87 +716,7 @@ static void ts27010_handle_mcc(struct ts0710_con *ts0710, u8 control,
 		break;
 	}
 }
-#ifndef CONFIG_ARCH_TEGRA
-#warning unused functions ts0710_flow_on, ts0710_flow_off
-static void ts0710_flow_on(u8 dlci, struct ts0710_con *ts0710)
-{
-	int i;
 
-	if ((ts0710->dlci[0].state != CONNECTED)
-	    && (ts0710->dlci[0].state != FLOW_STOPPED))
-		return;
-	else if ((ts0710->dlci[dlci].state != CONNECTED)
-		   && (ts0710->dlci[dlci].state != FLOW_STOPPED))
-		return;
-
-	if (!(ts0710->dlci[dlci].flow_control))
-		return;
-
-#if 0
-	cmdtty = dlci2tty[dlci].cmdtty;
-	datatty = dlci2tty[dlci].datatty;
-
-	if (cmdtty != datatty) {
-		/* Check AT cmd tty */
-		tty = mux_table[cmdtty];
-		if (mux_tty[cmdtty] && tty) {
-			if (test_bit(TTY_THROTTLED, &tty->flags))
-				return;
-		}
-
-		/* Check data tty */
-		tty = mux_table[datatty];
-		if (mux_tty[datatty] && tty) {
-			if (test_bit(TTY_THROTTLED, &tty->flags))
-				return;
-		}
-	}
-#endif
-
-	for (i = 0; i < 3; i++) {
-		if (ts27010_send_msc(ts0710, EA | RTC | RTR |
-				     DV, MCC_CMD, dlci) < 0) {
-			continue;
-		} else {
-			ts_debug(DBG_CMD, "ts27010: send flow on on dlci %d\n",
-				 dlci);
-			ts0710->dlci[dlci].flow_control = 0;
-			break;
-		}
-	}
-}
-
-static void ts0710_flow_off(struct tty_struct *tty, u8 dlci,
-			    struct ts0710_con *ts0710)
-{
-	int i;
-
-	if (test_and_set_bit(TTY_THROTTLED, &tty->flags))
-		return;
-
-	if ((ts0710->dlci[0].state != CONNECTED)
-	    && (ts0710->dlci[0].state != FLOW_STOPPED))
-		return;
-	else if ((ts0710->dlci[dlci].state != CONNECTED)
-		   && (ts0710->dlci[dlci].state != FLOW_STOPPED))
-		return;
-
-	if (ts0710->dlci[dlci].flow_control)
-		return;
-
-	for (i = 0; i < 3; i++) {
-		if (ts27010_send_msc(ts0710, EA | FC | RTC |
-				     RTR | DV, MCC_CMD, dlci) < 0)
-			continue;
-		else {
-			ts_debug(DBG_CMD, "ts27010: send flow off on dlci %d\n",
-				 dlci);
-			ts0710->dlci[dlci].flow_control = 1;
-			break;
-		}
-	}
-}
-#endif //CONFIG_ARCH_TEGRA
 static void ts27010_handle_sabm(struct ts0710_con *ts0710, u8 control, int dlci)
 {
 	ts_debug(DBG_CMD, "ts27010: SABM received on dlci %d\n", dlci);
@@ -1045,9 +948,13 @@ static int ts0710_close_channel(u8 dlci)
 	}
 
 	d->state = DISCONNECTING;
-	try = 3;
+	/* Reducing retry to improve recovery times on BP panic/powercycle */
+	try = 1;
 	while (try--) {
-		ts27010_send_disc(ts0710, dlci);
+		retval = ts27010_send_disc(ts0710, dlci);
+		if (retval < 0)
+			break;
+
 		mutex_unlock(&d->lock);
 		retval = wait_event_interruptible_timeout(d->close_wait,
 							  d->state !=
@@ -1164,7 +1071,8 @@ int ts0710_open_channel(u8 dlci)
 
 	/* we are the first to try to open the dlci */
 	d->state = CONNECTING;
-	try = dlci == 0 ? 10 : 3;
+	/* userspace already has a retry mechanism, not needed here */
+	try = dlci == 0 ? 10 : 1;
 	while (try--) {
 		ts27010_send_sabm(ts0710, dlci);
 

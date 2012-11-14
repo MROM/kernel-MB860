@@ -9,6 +9,7 @@
  * your option) any later version.
  */
 
+#include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/scatterlist.h>
 
@@ -84,15 +85,9 @@ int mmc_card_sleepawake(struct mmc_host *host, int sleep)
 	 * SEND_STATUS command to poll the status because that command (and most
 	 * others) is invalid while the card sleeps.
 	 */
-	if (!(host->caps & MMC_CAP_WAIT_WHILE_BUSY)) {
-		/* JEDEC MMCA 4.41 specifies the timeout value is in 200ns..838.86ms
-		   range. Round it up to 1us and use an appropriate delay method. */
-		unsigned long us = DIV_ROUND_UP(card->ext_csd.sa_timeout, 10);
-		if (us < 10)
-			udelay(us);
-		else
-			usleep_range(us, us + 100);
-	}
+	if (!(host->caps & MMC_CAP_WAIT_WHILE_BUSY))
+		mmc_delay(DIV_ROUND_UP(card->ext_csd.sa_timeout, 10000));
+
 	if (!sleep)
 		err = mmc_select_card(card);
 
@@ -110,7 +105,7 @@ int mmc_go_idle(struct mmc_host *host)
 	 * that in case of hardware that won't pull up DAT3/nCS otherwise.
 	 *
 	 * SPI hosts ignore ios.chip_select; it's managed according to
-	 * rules that must accomodate non-MMC slaves which this layer
+	 * rules that must accommodate non-MMC slaves which this layer
 	 * won't even know about.
 	 */
 	if (!mmc_host_is_spi(host)) {
@@ -392,6 +387,15 @@ int mmc_spi_set_crc(struct mmc_host *host, int use_crc)
 	return err;
 }
 
+/**
+ *	mmc_switch - modify EXT_CSD register
+ *	@card: the MMC card associated with the data transfer
+ *	@set: cmd set values
+ *	@index: EXT_CSD register index
+ *	@value: value to program into EXT_CSD register
+ *
+ *	Modifies the EXT_CSD register for selected card.
+ */
 int mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value)
 {
 	int err;
@@ -439,6 +443,8 @@ int mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value)
 	return 0;
 }
 
+EXPORT_SYMBOL(mmc_switch);
+
 int mmc_send_status(struct mmc_card *card, u32 *status)
 {
 	int err;
@@ -467,3 +473,104 @@ int mmc_send_status(struct mmc_card *card, u32 *status)
 	return 0;
 }
 
+static int
+mmc_send_bus_test(struct mmc_card *card, struct mmc_host *host, u8 opcode,
+		  u8 len)
+{
+	struct mmc_request mrq;
+	struct mmc_command cmd;
+	struct mmc_data data;
+	struct scatterlist sg;
+	u8 *data_buf;
+	u8 *test_buf;
+	int i, err;
+	static u8 testdata_8bit[8] = { 0x55, 0xaa, 0, 0, 0, 0, 0, 0 };
+	static u8 testdata_4bit[4] = { 0x5a, 0, 0, 0 };
+
+	/* dma onto stack is unsafe/nonportable, but callers to this
+	 * routine normally provide temporary on-stack buffers ...
+	 */
+	data_buf = kmalloc(len, GFP_KERNEL);
+	if (!data_buf)
+		return -ENOMEM;
+
+	if (len == 8)
+		test_buf = testdata_8bit;
+	else if (len == 4)
+		test_buf = testdata_4bit;
+	else {
+		printk(KERN_ERR "%s: Invalid bus_width %d\n",
+		       mmc_hostname(host), len);
+		kfree(data_buf);
+		return -EINVAL;
+	}
+
+	if (opcode == MMC_BUS_TEST_W)
+		memcpy(data_buf, test_buf, len);
+
+	memset(&mrq, 0, sizeof(struct mmc_request));
+	memset(&cmd, 0, sizeof(struct mmc_command));
+	memset(&data, 0, sizeof(struct mmc_data));
+
+	mrq.cmd = &cmd;
+	mrq.data = &data;
+	cmd.opcode = opcode;
+	cmd.arg = 0;
+
+	/* NOTE HACK:  the MMC_RSP_SPI_R1 is always correct here, but we
+	 * rely on callers to never use this with "native" calls for reading
+	 * CSD or CID.  Native versions of those commands use the R2 type,
+	 * not R1 plus a data block.
+	 */
+	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
+
+	data.blksz = len;
+	data.blocks = 1;
+	if (opcode == MMC_BUS_TEST_R)
+		data.flags = MMC_DATA_READ;
+	else
+		data.flags = MMC_DATA_WRITE;
+
+	data.sg = &sg;
+	data.sg_len = 1;
+	sg_init_one(&sg, data_buf, len);
+	mmc_wait_for_req(host, &mrq);
+	err = 0;
+	if (opcode == MMC_BUS_TEST_R) {
+		for (i = 0; i < len / 4; i++)
+			if ((test_buf[i] ^ data_buf[i]) != 0xff) {
+				err = -EIO;
+				break;
+			}
+	}
+	kfree(data_buf);
+
+	if (cmd.error)
+		return cmd.error;
+	if (data.error)
+		return data.error;
+
+	return err;
+}
+
+int mmc_bus_test(struct mmc_card *card, u8 bus_width)
+{
+	int err, width;
+
+	if (bus_width == MMC_BUS_WIDTH_8)
+		width = 8;
+	else if (bus_width == MMC_BUS_WIDTH_4)
+		width = 4;
+	else if (bus_width == MMC_BUS_WIDTH_1)
+		return 0; /* no need for test */
+	else
+		return -EINVAL;
+
+	/*
+	 * Ignore errors from BUS_TEST_W.  BUS_TEST_R will fail if there
+	 * is a problem.  This improves chances that the test will work.
+	 */
+	mmc_send_bus_test(card, card->host, MMC_BUS_TEST_W, width);
+	err = mmc_send_bus_test(card, card->host, MMC_BUS_TEST_R, width);
+	return err;
+}

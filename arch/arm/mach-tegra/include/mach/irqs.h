@@ -88,7 +88,7 @@
 #define INT_SYS_STATS_MON		(INT_SEC_BASE + 22)
 #define INT_GPIO5			(INT_SEC_BASE + 23)
 #define INT_CPU0_PMU_INTR		(INT_SEC_BASE + 24)
-#define INT_CPU2_PMU_INTR		(INT_SEC_BASE + 25)
+#define INT_CPU1_PMU_INTR		(INT_SEC_BASE + 25)
 #define INT_SEC_RES_26			(INT_SEC_BASE + 26)
 #define INT_S_LINK1			(INT_SEC_BASE + 27)
 #define INT_APB_DMA_COP			(INT_SEC_BASE + 28)
@@ -127,7 +127,7 @@
 #define INT_UARTD			(INT_TRI_BASE + 26)
 #define INT_UARTE			(INT_TRI_BASE + 27)
 #define INT_I2C3			(INT_TRI_BASE + 28)
-#define INT_SPI4			(INT_TRI_BASE + 29)
+#define INT_SPI_4			(INT_TRI_BASE + 29)
 #define INT_TRI_RES_30			(INT_TRI_BASE + 30)
 #define INT_SW_RESERVED			(INT_TRI_BASE + 31)
 
@@ -166,19 +166,23 @@
 #define INT_QUAD_RES_30			(INT_QUAD_BASE + 30)
 #define INT_QUAD_RES_31			(INT_QUAD_BASE + 31)
 
+#define INT_MAIN_NR			(INT_QUAD_BASE + 32 - INT_PRI_BASE)
+
 #define INT_SYNCPT_THRESH_BASE		(INT_QUAD_BASE + 32)
 #define INT_SYNCPT_THRESH_NR		32
 
 #define INT_GPIO_BASE			(INT_SYNCPT_THRESH_BASE + \
 					 INT_SYNCPT_THRESH_NR)
 #define INT_GPIO_NR			(28 * 8)
+
+#define FIQ_START			INT_GIC_BASE
+
+#define TEGRA_NR_IRQS			(INT_GPIO_BASE + INT_GPIO_NR)
+
+#define INT_BOARD_BASE			TEGRA_NR_IRQS
+#define NR_BOARD_IRQS			32
+
+#define NR_IRQS				(INT_BOARD_BASE + NR_BOARD_IRQS)
 #endif
 
-#define NR_IRQS				(INT_GPIO_BASE + INT_GPIO_NR)
-
-#ifdef CONFIG_TEGRA_WATCHDOG_FIQ
-int tegra_start_irq2fiq(int irqnum);
-int is_irq_valid_status(int irqnum);
-int tegra_clear_irq(int irqnum);
-#endif /* CONFIG_TEGRA_WATCHDOG_FIQ */
 #endif

@@ -34,7 +34,6 @@
  * Function Prototypes
  */
 static int cp210x_open(struct tty_struct *tty, struct usb_serial_port *);
-static void cp210x_cleanup(struct usb_serial_port *);
 static void cp210x_close(struct usb_serial_port *);
 static void cp210x_get_termios(struct tty_struct *,
 	struct usb_serial_port *port);
@@ -42,22 +41,21 @@ static void cp210x_get_termios_port(struct usb_serial_port *port,
 	unsigned int *cflagp, unsigned int *baudp);
 static void cp210x_set_termios(struct tty_struct *, struct usb_serial_port *,
 							struct ktermios*);
-static int cp210x_tiocmget(struct tty_struct *, struct file *);
-static int cp210x_tiocmset(struct tty_struct *, struct file *,
-		unsigned int, unsigned int);
-static int cp210x_tiocmset_port(struct usb_serial_port *port, struct file *,
+static int cp210x_tiocmget(struct tty_struct *);
+static int cp210x_tiocmset(struct tty_struct *, unsigned int, unsigned int);
+static int cp210x_tiocmset_port(struct usb_serial_port *port,
 		unsigned int, unsigned int);
 static void cp210x_break_ctl(struct tty_struct *, int);
 static int cp210x_startup(struct usb_serial *);
-static void cp210x_disconnect(struct usb_serial *);
 static void cp210x_dtr_rts(struct usb_serial_port *p, int on);
 
 static int debug;
 
-static struct usb_device_id id_table [] = {
+static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x045B, 0x0053) }, /* Renesas RX610 RX-Stick */
 	{ USB_DEVICE(0x0471, 0x066A) }, /* AKTAKOM ACE-1001 cable */
 	{ USB_DEVICE(0x0489, 0xE000) }, /* Pirelli Broadband S.p.A, DP-L10 SIP/GSM Mobile */
+	{ USB_DEVICE(0x0489, 0xE003) }, /* Pirelli Broadband S.p.A, DP-L10 SIP/GSM Mobile */
 	{ USB_DEVICE(0x0745, 0x1000) }, /* CipherLab USB CCD Barcode Scanner 1000 */
 	{ USB_DEVICE(0x08e6, 0x5501) }, /* Gemalto Prox-PU/CU contactless smartcard reader */
 	{ USB_DEVICE(0x08FD, 0x000A) }, /* Digianswer A/S , ZigBee/802.15.4 MAC Device */
@@ -94,7 +92,6 @@ static struct usb_device_id id_table [] = {
 	{ USB_DEVICE(0x10C4, 0x818B) }, /* AVIT Research USB to TTL */
 	{ USB_DEVICE(0x10C4, 0x819F) }, /* MJS USB Toslink Switcher */
 	{ USB_DEVICE(0x10C4, 0x81A6) }, /* ThinkOptics WavIt */
-	{ USB_DEVICE(0x10C4, 0x81A9) }, /* Multiplex RC Interface */
 	{ USB_DEVICE(0x10C4, 0x81AC) }, /* MSD Dash Hawk */
 	{ USB_DEVICE(0x10C4, 0x81AD) }, /* INSYS USB Modem */
 	{ USB_DEVICE(0x10C4, 0x81C8) }, /* Lipowsky Industrie Elektronik GmbH, Baby-JTAG */
@@ -104,7 +101,7 @@ static struct usb_device_id id_table [] = {
 	{ USB_DEVICE(0x10C4, 0x81F2) }, /* C1007 HF band RFID controller */
 	{ USB_DEVICE(0x10C4, 0x8218) }, /* Lipowsky Industrie Elektronik GmbH, HARP-1 */
 	{ USB_DEVICE(0x10C4, 0x822B) }, /* Modem EDGE(GSM) Comander 2 */
-	{ USB_DEVICE(0x10C4, 0x826B) }, /* Cygnal Integrated Products, Inc., Fasttrax GPS demostration module */
+	{ USB_DEVICE(0x10C4, 0x826B) }, /* Cygnal Integrated Products, Inc., Fasttrax GPS demonstration module */
 	{ USB_DEVICE(0x10C4, 0x8293) }, /* Telegesys ETRX2USB */
 	{ USB_DEVICE(0x10C4, 0x82F9) }, /* Procyon AVS */
 	{ USB_DEVICE(0x10C4, 0x8341) }, /* Siemens MC35PU GPRS Modem */
@@ -136,13 +133,10 @@ static struct usb_device_id id_table [] = {
 	{ USB_DEVICE(0x16DC, 0x0011) }, /* W-IE-NE-R Plein & Baus GmbH RCM Remote Control for MARATON Power Supply */
 	{ USB_DEVICE(0x16DC, 0x0012) }, /* W-IE-NE-R Plein & Baus GmbH MPOD Multi Channel Power Supply */
 	{ USB_DEVICE(0x16DC, 0x0015) }, /* W-IE-NE-R Plein & Baus GmbH CML Control, Monitoring and Data Logger */
-	{ USB_DEVICE(0x17A8, 0x0001) }, /* Kamstrup Optical Eye/3-wire */
-	{ USB_DEVICE(0x17A8, 0x0005) }, /* Kamstrup M-Bus Master MultiPort 250D */
 	{ USB_DEVICE(0x17F4, 0xAAAA) }, /* Wavesense Jazz blood glucose meter */
 	{ USB_DEVICE(0x1843, 0x0200) }, /* Vaisala USB Instrument Cable */
 	{ USB_DEVICE(0x18EF, 0xE00F) }, /* ELV USB-I2C-Interface */
 	{ USB_DEVICE(0x1BE3, 0x07A6) }, /* WAGO 750-923 USB Service Cable */
-	{ USB_DEVICE(0x3195, 0xF190) }, /* Link Instruments MSO-19 */
 	{ USB_DEVICE(0x413C, 0x9500) }, /* DW700 GPS USB interface */
 	{ } /* Terminating Entry */
 };
@@ -165,6 +159,8 @@ static struct usb_serial_driver cp210x_device = {
 	.usb_driver		= &cp210x_driver,
 	.id_table		= id_table,
 	.num_ports		= 1,
+	.bulk_in_size		= 256,
+	.bulk_out_size		= 256,
 	.open			= cp210x_open,
 	.close			= cp210x_close,
 	.break_ctl		= cp210x_break_ctl,
@@ -172,7 +168,6 @@ static struct usb_serial_driver cp210x_device = {
 	.tiocmget 		= cp210x_tiocmget,
 	.tiocmset		= cp210x_tiocmset,
 	.attach			= cp210x_startup,
-	.disconnect		= cp210x_disconnect,
 	.dtr_rts		= cp210x_dtr_rts
 };
 
@@ -339,11 +334,6 @@ static int cp210x_set_config(struct usb_serial_port *port, u8 request,
 		return -EPROTO;
 	}
 
-	/* Single data value */
-	result = usb_control_msg(serial->dev,
-			usb_sndctrlpipe(serial->dev, 0),
-			request, REQTYPE_HOST_TO_DEVICE, data[0],
-			0, NULL, 0, 300);
 	return 0;
 }
 
@@ -363,8 +353,8 @@ static inline int cp210x_set_config_single(struct usb_serial_port *port,
  * Quantises the baud rate as per AN205 Table 1
  */
 static unsigned int cp210x_quantise_baudrate(unsigned int baud) {
-	if (baud <= 300)
-		baud = 300;
+	if      (baud <= 56)       baud = 0;
+	else if (baud <= 300)      baud = 300;
 	else if (baud <= 600)      baud = 600;
 	else if (baud <= 1200)     baud = 1200;
 	else if (baud <= 1800)     baud = 1800;
@@ -401,7 +391,6 @@ static unsigned int cp210x_quantise_baudrate(unsigned int baud) {
 
 static int cp210x_open(struct tty_struct *tty, struct usb_serial_port *port)
 {
-	struct usb_serial *serial = port->serial;
 	int result;
 
 	dbg("%s - port %d", __func__, port->number);
@@ -412,49 +401,20 @@ static int cp210x_open(struct tty_struct *tty, struct usb_serial_port *port)
 		return -EPROTO;
 	}
 
-	/* Start reading from the device */
-	usb_fill_bulk_urb(port->read_urb, serial->dev,
-			usb_rcvbulkpipe(serial->dev,
-			port->bulk_in_endpointAddress),
-			port->read_urb->transfer_buffer,
-			port->read_urb->transfer_buffer_length,
-			serial->type->read_bulk_callback,
-			port);
-	result = usb_submit_urb(port->read_urb, GFP_KERNEL);
-	if (result) {
-		dev_err(&port->dev, "%s - failed resubmitting read urb, "
-				"error %d\n", __func__, result);
+	result = usb_serial_generic_open(tty, port);
+	if (result)
 		return result;
-	}
 
 	/* Configure the termios structure */
 	cp210x_get_termios(tty, port);
 	return 0;
 }
 
-static void cp210x_cleanup(struct usb_serial_port *port)
-{
-	struct usb_serial *serial = port->serial;
-
-	dbg("%s - port %d", __func__, port->number);
-
-	if (serial->dev) {
-		/* shutdown any bulk reads that might be going on */
-		if (serial->num_bulk_out)
-			usb_kill_urb(port->write_urb);
-		if (serial->num_bulk_in)
-			usb_kill_urb(port->read_urb);
-	}
-}
-
 static void cp210x_close(struct usb_serial_port *port)
 {
 	dbg("%s - port %d", __func__, port->number);
 
-	/* shutdown our urbs */
-	dbg("%s - shutting down urbs", __func__);
-	usb_kill_urb(port->write_urb);
-	usb_kill_urb(port->read_urb);
+	usb_serial_generic_close(port);
 
 	mutex_lock(&port->serial->disc_mutex);
 	if (!port->serial->disconnected)
@@ -639,7 +599,7 @@ static void cp210x_set_termios(struct tty_struct *tty,
 				baud);
 		if (cp210x_set_config_single(port, CP210X_SET_BAUDDIV,
 					((BAUD_RATE_GEN_FREQ + baud/2) / baud))) {
-			dbg("Baud rate requested not supported by device\n");
+			dbg("Baud rate requested not supported by device");
 			baud = tty_termios_baud_rate(old_termios);
 		}
 	}
@@ -741,14 +701,14 @@ static void cp210x_set_termios(struct tty_struct *tty,
 
 }
 
-static int cp210x_tiocmset (struct tty_struct *tty, struct file *file,
+static int cp210x_tiocmset (struct tty_struct *tty,
 		unsigned int set, unsigned int clear)
 {
 	struct usb_serial_port *port = tty->driver_data;
-	return cp210x_tiocmset_port(port, file, set, clear);
+	return cp210x_tiocmset_port(port, set, clear);
 }
 
-static int cp210x_tiocmset_port(struct usb_serial_port *port, struct file *file,
+static int cp210x_tiocmset_port(struct usb_serial_port *port,
 		unsigned int set, unsigned int clear)
 {
 	unsigned int control = 0;
@@ -780,12 +740,12 @@ static int cp210x_tiocmset_port(struct usb_serial_port *port, struct file *file,
 static void cp210x_dtr_rts(struct usb_serial_port *p, int on)
 {
 	if (on)
-		cp210x_tiocmset_port(p, NULL,  TIOCM_DTR|TIOCM_RTS, 0);
+		cp210x_tiocmset_port(p, TIOCM_DTR|TIOCM_RTS, 0);
 	else
-		cp210x_tiocmset_port(p, NULL,  0, TIOCM_DTR|TIOCM_RTS);
+		cp210x_tiocmset_port(p, 0, TIOCM_DTR|TIOCM_RTS);
 }
 
-static int cp210x_tiocmget (struct tty_struct *tty, struct file *file)
+static int cp210x_tiocmget (struct tty_struct *tty)
 {
 	struct usb_serial_port *port = tty->driver_data;
 	unsigned int control;
@@ -827,17 +787,6 @@ static int cp210x_startup(struct usb_serial *serial)
 	/* cp210x buffers behave strangely unless device is reset */
 	usb_reset_device(serial->dev);
 	return 0;
-}
-
-static void cp210x_disconnect(struct usb_serial *serial)
-{
-	int i;
-
-	dbg("%s", __func__);
-
-	/* Stop reads and writes on all ports */
-	for (i = 0; i < serial->num_ports; ++i)
-		cp210x_cleanup(serial->port[i]);
 }
 
 static int __init cp210x_init(void)
