@@ -1,4 +1,4 @@
-cmd_arch/arm/mach-tegra/common-t2.o := arm-linux-gnueabi-gcc -Wp,-MD,arch/arm/mach-tegra/.common-t2.o.d  -nostdinc -isystem /usr/lib/gcc/arm-linux-gnueabi/4.6/include -I/tmp/xoom-kernel/kernel/arch/arm/include -Iinclude  -include include/generated/autoconf.h -D__KERNEL__ -mlittle-endian -Iarch/arm/mach-tegra/include -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -fno-delete-null-pointer-checks -O2 -marm -fno-dwarf2-cfi-asm -fno-omit-frame-pointer -mapcs -mno-sched-prolog -mabi=aapcs-linux -mno-thumb-interwork -D__LINUX_ARM_ARCH__=7 -march=armv7-a -msoft-float -Uarm -Wframe-larger-than=1024 -fno-stack-protector -fno-omit-frame-pointer -fno-optimize-sibling-calls -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fconserve-stack -DCC_HAVE_ASM_GOTO    -D"KBUILD_STR(s)=\#s" -D"KBUILD_BASENAME=KBUILD_STR(common_t2)"  -D"KBUILD_MODNAME=KBUILD_STR(common_t2)" -c -o arch/arm/mach-tegra/.tmp_common-t2.o arch/arm/mach-tegra/common-t2.c
+cmd_arch/arm/mach-tegra/common-t2.o := arm-linux-gnueabi-gcc -Wp,-MD,arch/arm/mach-tegra/.common-t2.o.d  -nostdinc -isystem /usr/lib/gcc/arm-linux-gnueabi/4.6/include -I/home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include -Iinclude  -include include/generated/autoconf.h -D__KERNEL__ -mlittle-endian -Iarch/arm/mach-tegra/include -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Wno-format-security -fno-delete-null-pointer-checks -O2 -marm -fno-dwarf2-cfi-asm -fno-omit-frame-pointer -mapcs -mno-sched-prolog -mabi=aapcs-linux -mno-thumb-interwork -D__LINUX_ARM_ARCH__=7 -march=armv7-a -msoft-float -Uarm -Wframe-larger-than=1024 -fno-stack-protector -fno-omit-frame-pointer -fno-optimize-sibling-calls -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fconserve-stack -DCC_HAVE_ASM_GOTO    -D"KBUILD_STR(s)=\#s" -D"KBUILD_BASENAME=KBUILD_STR(common_t2)"  -D"KBUILD_MODNAME=KBUILD_STR(common_t2)" -c -o arch/arm/mach-tegra/.tmp_common-t2.o arch/arm/mach-tegra/common-t2.c
 
 source_arch/arm/mach-tegra/common-t2.o := arch/arm/mach-tegra/common-t2.c
 
@@ -25,24 +25,24 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/arch/supports/optimized/inlining.h) \
     $(wildcard include/config/optimize/inlining.h) \
   include/linux/compiler-gcc4.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/linkage.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/linkage.h \
   include/linux/stddef.h \
   include/linux/types.h \
     $(wildcard include/config/uid16.h) \
     $(wildcard include/config/arch/dma/addr/t/64bit.h) \
     $(wildcard include/config/phys/addr/t/64bit.h) \
     $(wildcard include/config/64bit.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/types.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/types.h \
   include/asm-generic/int-ll64.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/bitsperlong.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/bitsperlong.h \
   include/asm-generic/bitsperlong.h \
   include/linux/posix_types.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/posix_types.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/posix_types.h \
   include/linux/bitops.h \
     $(wildcard include/config/generic/find/last/bit.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/bitops.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/bitops.h \
     $(wildcard include/config/smp.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/system.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/system.h \
     $(wildcard include/config/function/graph/tracer.h) \
     $(wildcard include/config/cpu/32v6k.h) \
     $(wildcard include/config/cpu/xsc3.h) \
@@ -58,12 +58,12 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/preempt/tracer.h) \
     $(wildcard include/config/trace/irqflags/support.h) \
   include/linux/typecheck.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/irqflags.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/ptrace.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irqflags.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/ptrace.h \
     $(wildcard include/config/cpu/endian/be8.h) \
     $(wildcard include/config/arm/thumb.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/hwcap.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/outercache.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/hwcap.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/outercache.h \
     $(wildcard include/config/outer/cache/sync.h) \
     $(wildcard include/config/outer/cache.h) \
   arch/arm/mach-tegra/include/mach/barriers.h \
@@ -84,23 +84,23 @@ deps_arch/arm/mach-tegra/common-t2.o := \
   include/linux/dynamic_debug.h \
   include/linux/jump_label.h \
     $(wildcard include/config/jump/label.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/byteorder.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/byteorder.h \
   include/linux/byteorder/little_endian.h \
   include/linux/swab.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/swab.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/swab.h \
   include/linux/byteorder/generic.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/bug.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/bug.h \
     $(wildcard include/config/bug.h) \
     $(wildcard include/config/debug/bugverbose.h) \
   include/asm-generic/bug.h \
     $(wildcard include/config/generic/bug.h) \
     $(wildcard include/config/generic/bug/relative/pointers.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/div64.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/div64.h \
   include/linux/io.h \
     $(wildcard include/config/mmu.h) \
     $(wildcard include/config/has/ioport.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/io.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/memory.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/memory.h \
     $(wildcard include/config/page/offset.h) \
     $(wildcard include/config/thumb2/kernel.h) \
     $(wildcard include/config/highmem.h) \
@@ -112,7 +112,7 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/zone/dma.h) \
   include/linux/const.h \
   arch/arm/mach-tegra/include/mach/memory.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/sizes.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/sizes.h \
   include/asm-generic/memory_model.h \
     $(wildcard include/config/flatmem.h) \
     $(wildcard include/config/discontigmem.h) \
@@ -120,7 +120,7 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/sparsemem.h) \
   arch/arm/mach-tegra/include/mach/io.h \
     $(wildcard include/config/tegra/pci.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/page.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/page.h \
     $(wildcard include/config/cpu/copy/v3.h) \
     $(wildcard include/config/cpu/copy/v4wt.h) \
     $(wildcard include/config/cpu/copy/v4wb.h) \
@@ -128,7 +128,7 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/cpu/copy/fa.h) \
     $(wildcard include/config/cpu/xscale.h) \
     $(wildcard include/config/cpu/copy/v6.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/glue.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/glue.h \
   include/asm-generic/getorder.h \
   include/linux/interrupt.h \
     $(wildcard include/config/generic/hardirqs.h) \
@@ -143,12 +143,12 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/preempt/notifiers.h) \
   include/linux/thread_info.h \
     $(wildcard include/config/compat.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/thread_info.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/thread_info.h \
     $(wildcard include/config/arm/thumbee.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/fpstate.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/fpstate.h \
     $(wildcard include/config/vfpv3.h) \
     $(wildcard include/config/iwmmxt.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/domain.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/domain.h \
     $(wildcard include/config/io/36.h) \
     $(wildcard include/config/cpu/use/domains.h) \
   include/linux/list.h \
@@ -156,11 +156,11 @@ deps_arch/arm/mach-tegra/common-t2.o := \
   include/linux/poison.h \
     $(wildcard include/config/illegal/pointer/value.h) \
   include/linux/prefetch.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/processor.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/processor.h \
     $(wildcard include/config/have/hw/breakpoint.h) \
     $(wildcard include/config/arm/errata/754327.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/hw_breakpoint.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/cache.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/hw_breakpoint.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cache.h \
     $(wildcard include/config/arm/l1/cache/shift.h) \
     $(wildcard include/config/aeabi.h) \
   include/linux/cpumask.h \
@@ -174,7 +174,7 @@ deps_arch/arm/mach-tegra/common-t2.o := \
   include/linux/bitmap.h \
   include/linux/string.h \
     $(wildcard include/config/binary/printf.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/string.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/string.h \
   include/linux/irqreturn.h \
   include/linux/irqnr.h \
   include/linux/hardirq.h \
@@ -189,32 +189,32 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/prove/rcu.h) \
   include/linux/ftrace_irq.h \
     $(wildcard include/config/ftrace/nmi/enter.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/hardirq.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/hardirq.h \
     $(wildcard include/config/local/timers.h) \
   include/linux/cache.h \
     $(wildcard include/config/arch/has/cache/line/size.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/irq.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
   include/linux/irq_cpustat.h \
   include/linux/smp.h \
     $(wildcard include/config/use/generic/smp/helpers.h) \
   include/linux/errno.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/errno.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/errno.h \
   include/asm-generic/errno.h \
   include/asm-generic/errno-base.h \
   include/linux/init.h \
     $(wildcard include/config/modules.h) \
     $(wildcard include/config/hotplug.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/smp.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/smp.h \
   arch/arm/mach-tegra/include/mach/smp.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/hardware/gic.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/hardware/gic.h \
   include/linux/percpu.h \
     $(wildcard include/config/need/per/cpu/embed/first/chunk.h) \
     $(wildcard include/config/need/per/cpu/page/first/chunk.h) \
     $(wildcard include/config/have/setup/per/cpu/area.h) \
   include/linux/pfn.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/percpu.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/percpu.h \
   include/asm-generic/percpu.h \
   include/linux/percpu-defs.h \
     $(wildcard include/config/debug/force/weak/per/cpu.h) \
@@ -234,9 +234,9 @@ deps_arch/arm/mach-tegra/common-t2.o := \
   include/linux/stringify.h \
   include/linux/bottom_half.h \
   include/linux/spinlock_types.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/spinlock_types.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/spinlock_types.h \
   include/linux/rwlock_types.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/spinlock.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/spinlock.h \
   include/linux/rwlock.h \
   include/linux/spinlock_api_smp.h \
     $(wildcard include/config/inline/spin/lock.h) \
@@ -268,19 +268,19 @@ deps_arch/arm/mach-tegra/common-t2.o := \
     $(wildcard include/config/inline/write/unlock/irq.h) \
     $(wildcard include/config/inline/read/unlock/irqrestore.h) \
     $(wildcard include/config/inline/write/unlock/irqrestore.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/atomic.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/atomic.h \
     $(wildcard include/config/generic/atomic64.h) \
   include/asm-generic/atomic-long.h \
   include/linux/math64.h \
   include/linux/jiffies.h \
   include/linux/timex.h \
   include/linux/param.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/param.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/param.h \
     $(wildcard include/config/hz.h) \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/timex.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
   include/linux/wait.h \
-  /tmp/xoom-kernel/kernel/arch/arm/include/asm/current.h \
+  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/current.h \
   include/linux/timer.h \
   include/linux/debugobjects.h \
     $(wildcard include/config/debug/objects.h) \

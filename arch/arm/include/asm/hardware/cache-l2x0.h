@@ -20,6 +20,9 @@
 #ifndef __ASM_ARM_HARDWARE_L2X0_H
 #define __ASM_ARM_HARDWARE_L2X0_H
 
+#define L2X0_PREFETCH_OFFSET		0xF60
+#define L2X0_PWR_CTRL                   0xF80
+
 #define L2X0_CACHE_ID			0x000
 #define L2X0_CACHE_TYPE			0x004
 #define L2X0_CTRL			0x100
