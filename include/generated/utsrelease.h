@@ -1,1 +1,0 @@
-#define UTS_RELEASE "2.6.39.4-MB860-MROM-g892d661-dirty"
