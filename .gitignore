@@ -10,7 +10,7 @@
 # Normal rules
 #
 .*
-!.version
+.version
 *.o
 *.o.*
 *.a
