@@ -434,6 +434,7 @@ deps_arch/arm/mm/copypage-v6.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
+    $(wildcard include/config/tegra/watchdog/fiq.h) \
   include/linux/irq_cpustat.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cacheflush.h \
     $(wildcard include/config/smp/on/up.h) \
@@ -499,6 +500,7 @@ deps_arch/arm/mm/copypage-v6.o := \
   include/linux/param.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/jiffies.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cputime.h \
   include/asm-generic/cputime.h \

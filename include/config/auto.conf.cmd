@@ -586,6 +586,7 @@ deps_config := \
 	arch/arm/mach-versatile/Kconfig \
 	arch/arm/mach-ux500/Kconfig \
 	arch/arm/mach-u300/Kconfig \
+	arch/arm/mach-tegra/odm_kit/Kconfig \
 	arch/arm/mach-tegra/Kconfig \
 	arch/arm/plat-stmp3xxx/Kconfig \
 	drivers/sh/intc/Kconfig \

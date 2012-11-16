@@ -320,6 +320,7 @@ deps_arch/arm/kernel/process.o := \
     $(wildcard include/config/hz.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/debugobjects.h \
     $(wildcard include/config/debug/objects.h) \
     $(wildcard include/config/debug/objects/free.h) \
@@ -522,6 +523,7 @@ deps_arch/arm/kernel/process.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
+    $(wildcard include/config/tegra/watchdog/fiq.h) \
   include/linux/irq_cpustat.h \
   include/trace/events/irq.h \
   include/linux/kallsyms.h \
@@ -586,7 +588,6 @@ deps_arch/arm/kernel/process.o := \
     $(wildcard include/config/generic/time/vsyscall.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   include/linux/utsname.h \
     $(wildcard include/config/uts/ns.h) \
   include/linux/nsproxy.h \
@@ -635,12 +636,6 @@ deps_arch/arm/kernel/process.o := \
   arch/arm/mach-tegra/include/mach/system.h \
   arch/arm/mach-tegra/include/mach/hardware.h \
   arch/arm/mach-tegra/include/mach/iomap.h \
-    $(wildcard include/config/tegra/debug/uart/none.h) \
-    $(wildcard include/config/tegra/debug/uarta.h) \
-    $(wildcard include/config/tegra/debug/uartb.h) \
-    $(wildcard include/config/tegra/debug/uartc.h) \
-    $(wildcard include/config/tegra/debug/uartd.h) \
-    $(wildcard include/config/tegra/debug/uarte.h) \
 
 arch/arm/kernel/process.o: $(deps_arch/arm/kernel/process.o)
 

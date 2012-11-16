@@ -341,6 +341,7 @@ deps_init/do_mounts_initrd.o := \
   include/linux/param.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/jiffies.h \
   include/linux/nodemask.h \
     $(wildcard include/config/highmem.h) \
@@ -603,6 +604,7 @@ deps_init/do_mounts_initrd.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
+    $(wildcard include/config/tegra/watchdog/fiq.h) \
   include/linux/irq_cpustat.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cacheflush.h \
     $(wildcard include/config/smp/on/up.h) \
@@ -630,7 +632,6 @@ deps_init/do_mounts_initrd.o := \
   include/linux/iocontext.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   include/linux/bsg.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/scatterlist.h \
   include/asm-generic/scatterlist.h \

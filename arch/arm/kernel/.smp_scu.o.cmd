@@ -86,7 +86,6 @@ deps_arch/arm/kernel/smp_scu.o := \
   arch/arm/mach-tegra/include/mach/barriers.h \
   include/asm-generic/cmpxchg-local.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/page.h \
     $(wildcard include/config/cpu/copy/v3.h) \
     $(wildcard include/config/cpu/copy/v4wt.h) \

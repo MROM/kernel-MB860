@@ -324,6 +324,7 @@ deps_arch/arm/mm/init.o := \
   include/linux/param.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/jiffies.h \
   include/linux/rbtree.h \
   include/linux/cpumask.h \
@@ -589,6 +590,7 @@ deps_arch/arm/mm/init.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
+    $(wildcard include/config/tegra/watchdog/fiq.h) \
   include/linux/irq_cpustat.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cacheflush.h \
     $(wildcard include/config/smp/on/up.h) \
@@ -1714,7 +1716,6 @@ deps_arch/arm/mm/init.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/mach/map.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   arch/arm/mm/mm.h \
 
 arch/arm/mm/init.o: $(deps_arch/arm/mm/init.o)

@@ -185,6 +185,7 @@ deps_init/calibrate.o := \
     $(wildcard include/config/hz.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/delay.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/delay.h \
     $(wildcard include/config/arch/provides/udelay.h) \

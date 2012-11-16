@@ -338,6 +338,7 @@ deps_arch/arm/kernel/smp_twd.o := \
     $(wildcard include/config/hz.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/debugobjects.h \
     $(wildcard include/config/debug/objects.h) \
     $(wildcard include/config/debug/objects/free.h) \
@@ -386,7 +387,6 @@ deps_arch/arm/kernel/smp_twd.o := \
     $(wildcard include/config/generic/time/vsyscall.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   include/linux/irq.h \
     $(wildcard include/config/s390.h) \
     $(wildcard include/config/irq/release/method.h) \
@@ -397,6 +397,7 @@ deps_arch/arm/kernel/smp_twd.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
+    $(wildcard include/config/tegra/watchdog/fiq.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq_regs.h \
   include/asm-generic/irq_regs.h \
   include/linux/irqdesc.h \

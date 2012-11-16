@@ -317,6 +317,7 @@ deps_arch/arm/mm/fault-armv.o := \
     $(wildcard include/config/hz.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/debugobjects.h \
     $(wildcard include/config/debug/objects.h) \
     $(wildcard include/config/debug/objects/free.h) \
@@ -550,6 +551,7 @@ deps_arch/arm/mm/fault-armv.o := \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/irq.h \
   arch/arm/mach-tegra/include/mach/irqs.h \
     $(wildcard include/config/arch/tegra/2x/soc.h) \
+    $(wildcard include/config/tegra/watchdog/fiq.h) \
   include/linux/irq_cpustat.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cacheflush.h \
     $(wildcard include/config/smp/on/up.h) \

@@ -315,6 +315,7 @@ deps_arch/arm/mm/vmregion.o := \
     $(wildcard include/config/hz.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/debugobjects.h \
     $(wildcard include/config/debug/objects/free.h) \
   include/linux/kobject.h \

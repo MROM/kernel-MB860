@@ -316,6 +316,7 @@ deps_arch/arm/kernel/io.o := \
     $(wildcard include/config/hz.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/debugobjects.h \
     $(wildcard include/config/debug/objects.h) \
     $(wildcard include/config/debug/objects/free.h) \
@@ -352,7 +353,6 @@ deps_arch/arm/kernel/io.o := \
     $(wildcard include/config/has/ioport.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
 
 arch/arm/kernel/io.o: $(deps_arch/arm/kernel/io.o)
 

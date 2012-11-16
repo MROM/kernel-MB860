@@ -469,6 +469,7 @@ deps_arch/arm/mm/mmap.o := \
   include/linux/param.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/jiffies.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/cputime.h \
   include/asm-generic/cputime.h \
@@ -518,7 +519,6 @@ deps_arch/arm/mm/mmap.o := \
     $(wildcard include/config/has/ioport.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   include/linux/personality.h \
   include/linux/random.h \
   include/linux/irqnr.h \

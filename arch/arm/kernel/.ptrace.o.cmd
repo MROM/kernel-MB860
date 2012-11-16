@@ -239,6 +239,7 @@ deps_arch/arm/kernel/ptrace.o := \
   include/linux/param.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/jiffies.h \
   include/linux/rbtree.h \
   include/linux/cpumask.h \

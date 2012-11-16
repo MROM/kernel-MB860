@@ -77,15 +77,7 @@ deps_arch/arm/kernel/entry-armv.o := \
   arch/arm/mach-tegra/include/mach/entry-macro.S \
     $(wildcard include/config/arm/gic.h) \
   arch/arm/mach-tegra/include/mach/iomap.h \
-    $(wildcard include/config/tegra/debug/uart/none.h) \
-    $(wildcard include/config/tegra/debug/uarta.h) \
-    $(wildcard include/config/tegra/debug/uartb.h) \
-    $(wildcard include/config/tegra/debug/uartc.h) \
-    $(wildcard include/config/tegra/debug/uartd.h) \
-    $(wildcard include/config/tegra/debug/uarte.h) \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
-  /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/hardware/entry-macro-gic.S \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/hardware/gic.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/thread_notify.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/unwind.h \

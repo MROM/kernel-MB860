@@ -239,6 +239,7 @@ deps_arch/arm/kernel/asm-offsets.s := \
   include/linux/param.h \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/timex.h \
   arch/arm/mach-tegra/include/mach/timex.h \
+    $(wildcard include/config/use/arm/twd/prescaler.h) \
   include/linux/jiffies.h \
   include/linux/rbtree.h \
   include/linux/cpumask.h \
@@ -524,7 +525,6 @@ deps_arch/arm/kernel/asm-offsets.s := \
     $(wildcard include/config/need/sg/dma/length.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/io.h \
   arch/arm/mach-tegra/include/mach/io.h \
-    $(wildcard include/config/tegra/pci.h) \
   /home/michael/android/kernel/2.6.39.4/kernel/arch/arm/include/asm/dma-mapping.h \
   include/linux/dma-debug.h \
     $(wildcard include/config/dma/api/debug.h) \
