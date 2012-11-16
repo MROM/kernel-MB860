@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Linux/arm 2.6.39.4 Kernel Configuration
- * Thu Nov 15 21:19:12 2012
+ * Thu Nov 15 23:50:36 2012
  */
 #define CONFIG_RING_BUFFER 1
 #define CONFIG_NF_CONNTRACK_H323 1

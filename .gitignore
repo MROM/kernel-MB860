@@ -31,13 +31,9 @@ modules.builtin
 *.bz2
 *.lzo
 *.lzma
-<<<<<<< HEAD
 *.xzkern
 *.xz
-=======
-*.xz
 *.lzo
->>>>>>> v2.6.39
 *.patch
 *.gcno
 

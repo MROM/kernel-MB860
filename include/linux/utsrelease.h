@@ -1,0 +1,1 @@
+#define UTS_RELEASE "2.6.32.59-MB860-MROM-g6d982c5"

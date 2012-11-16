@@ -101,11 +101,13 @@ static void syncpt_thresh_unmask(unsigned int irq)
 
 static void syncpt_thresh_cascade(unsigned int irq, struct irq_desc *desc)
 {
-	void __iomem *sync_regs = get_irq_desc_data(desc);
+	//void __iomem *sync_regs = get_irq_desc_data(desc);
+	void __iomem *sync_regs = irq_desc_get_handler_data(desc);
 	u32 reg;
 	int id;
 
-	desc->chip->ack(irq);
+	//desc->chip->ack(irq);
+	irq_desc_get_chip(desc)->irq_ack(irq_desc_get_irq_data(desc));
 
 	reg = readl(sync_regs + HOST1X_SYNC_SYNCPT_THRESH_CPU0_INT_STATUS);
 
@@ -114,13 +116,14 @@ static void syncpt_thresh_cascade(unsigned int irq, struct irq_desc *desc)
 		generic_handle_irq(id + INT_SYNCPT_THRESH_BASE);
 	}
 
-	desc->chip->unmask(irq);
+	//desc->chip->unmask(irq);
+	irq_desc_get_chip(desc)->irq_unmask(irq_desc_get_irq_data(desc));
 }
 
 static struct irq_chip syncpt_thresh_irq = {
 	.name		= "syncpt",
-	.mask		= syncpt_thresh_mask,
-	.unmask		= syncpt_thresh_unmask
+	.irq_mask		= syncpt_thresh_mask,
+	.irq_unmask		= syncpt_thresh_unmask
 };
 
 void __init syncpt_init_irq(void)
@@ -138,14 +141,14 @@ void __init syncpt_init_irq(void)
 		sync_regs + HOST1X_SYNC_SYNCPT_THRESH_CPU0_INT_STATUS);
 
 	for (i = INT_SYNCPT_THRESH_BASE; i < INT_GPIO_BASE; i++) {
-		set_irq_chip(i, &syncpt_thresh_irq);
-		set_irq_chip_data(i, sync_regs);
-		set_irq_handler(i, handle_simple_irq);
-		set_irq_flags(i, IRQF_VALID);
+		irq_set_chip(i, &syncpt_thresh_irq);
+		irq_set_chip_data(i, sync_regs);
+		irq_set_handler(i, handle_simple_irq);
+		irq_set_status_flags(i, IRQF_VALID);
 	}
-	if (set_irq_data(INT_HOST1X_MPCORE_SYNCPT, sync_regs))
+	if (irq_set_chip_data(INT_HOST1X_MPCORE_SYNCPT, sync_regs))
 		BUG();
-	set_irq_chained_handler(INT_HOST1X_MPCORE_SYNCPT,
+	irq_set_chained_handler(INT_HOST1X_MPCORE_SYNCPT,
 				syncpt_thresh_cascade);
 }
 
@@ -159,20 +162,23 @@ void __init tegra_init_irq(void)
 		writel(0, ictlr_to_virt(i) + ICTLR_CPU_IEP_CLASS);
 	}
 
-	gic_dist_init(0, IO_ADDRESS(TEGRA_ARM_INT_DIST_BASE), 29);
-	gic_cpu_init(0, IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
+	//gic_dist_init(0, IO_ADDRESS(TEGRA_ARM_INT_DIST_BASE), 29);
+	//gic_cpu_init(0, IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
 
-	gic = get_irq_chip(29);
-	gic_unmask_irq = gic->unmask;
-	gic_mask_irq = gic->mask;
-	tegra_irq.ack = gic->ack;
+	gic_init(0, 29, IO_ADDRESS(TEGRA_ARM_INT_DIST_BASE),
+                 IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
+
+	gic = irq_get_chip(29);
+	gic_unmask_irq = gic->irq_unmask;
+	gic_mask_irq = gic->irq_mask;
+	tegra_irq.irq_ack = gic->irq_ack;
 #ifdef CONFIG_SMP
-	tegra_irq.set_affinity = gic->set_affinity;
+	tegra_irq.irq_set_affinity = gic->irq_set_affinity;
 #endif
 
 	for (i=INT_PRI_BASE; i<INT_SYNCPT_THRESH_BASE; i++) {
-		set_irq_chip(i, &tegra_irq);
-		set_irq_handler(i, handle_level_irq);
+		irq_set_chip(i, &tegra_irq);
+		irq_set_handler(i, handle_level_irq);
 		set_irq_flags(i, IRQF_VALID);
 	}
 
@@ -191,7 +197,7 @@ void tegra_irq_suspend(void)
 	for (i=INT_PRI_BASE; i<INT_GPIO_BASE; i++) {
 		struct irq_desc *desc = irq_to_desc(i);
 		if (!desc) continue;
-		if (desc->status & IRQ_WAKEUP) {
+		if (desc->status_use_accessors & IRQD_WAKEUP_STATE) {
 			pr_debug("irq %d is wakeup\n", i);
 			continue;
 		}
@@ -225,7 +231,7 @@ void tegra_irq_resume(void)
 
 	for (i=INT_PRI_BASE; i<INT_GPIO_BASE; i++) {
 		struct irq_desc *desc = irq_to_desc(i);
-		if (!desc || (desc->status & IRQ_WAKEUP)) continue;
+		if (!desc || (desc->status_use_accessors & IRQD_WAKEUP_STATE)) continue;
 		enable_irq(i);
 	}
 }
