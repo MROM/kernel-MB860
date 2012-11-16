@@ -20,24 +20,27 @@
 #ifndef __MACH_TEGRA_CLOCK_H
 #define __MACH_TEGRA_CLOCK_H
 
-#include <asm/clkdev.h>
+#include <linux/clkdev.h>
+#include <linux/list.h>
+#include <linux/mutex.h>
+#include <linux/spinlock.h>
 
 #define DIV_BUS			(1 << 0)
 #define DIV_U71			(1 << 1)
 #define DIV_U71_FIXED		(1 << 2)
 #define DIV_2			(1 << 3)
-#define PLL_FIXED		(1 << 4)
-#define PLL_HAS_CPCON		(1 << 5)
-#define MUX			(1 << 6)
-#define PLLD			(1 << 7)
-#define PERIPH_NO_RESET		(1 << 8)
-#define PERIPH_NO_ENB		(1 << 9)
-#define PERIPH_EMC_ENB		(1 << 10)
-#define PERIPH_MANUAL_RESET	(1 << 11)
-#define PERIPH_PMC_RESET	(1 << 12)
+#define DIV_U16			(1 << 4)
+#define PLL_FIXED		(1 << 5)
+#define PLL_HAS_CPCON		(1 << 6)
+#define MUX			(1 << 7)
+#define PLLD			(1 << 8)
+#define PERIPH_NO_RESET		(1 << 9)
+#define PERIPH_NO_ENB		(1 << 10)
+#define PERIPH_EMC_ENB		(1 << 11)
+#define PERIPH_MANUAL_RESET	(1 << 12)
 #define PLL_ALT_MISC_REG	(1 << 13)
+#define PLLU			(1 << 14)
 #define ENABLE_ON_INIT		(1 << 28)
-#define PERIPH_ON_APB		(1 << 29)
 
 struct clk;
 
@@ -46,7 +49,7 @@ struct clk_mux_sel {
 	u32		value;
 };
 
-struct clk_pll_table {
+struct clk_pll_freq_table {
 	unsigned long	input_rate;
 	unsigned long	output_rate;
 	u16		n;
@@ -59,12 +62,10 @@ struct clk_ops {
 	void		(*init)(struct clk *);
 	int		(*enable)(struct clk *);
 	void		(*disable)(struct clk *);
-	void		(*recalc)(struct clk *);
 	int		(*set_parent)(struct clk *, struct clk *);
 	int		(*set_rate)(struct clk *, unsigned long);
-	unsigned long	(*get_rate)(struct clk *);
 	long		(*round_rate)(struct clk *, unsigned long);
-	unsigned long	(*recalculate_rate)(struct clk *);
+	void		(*reset)(struct clk *, bool);
 };
 
 enum clk_state {
@@ -73,82 +74,133 @@ enum clk_state {
 	OFF,
 };
 
-#ifdef CONFIG_TEGRA_NVRM
-struct clk {
-	struct list_head	node;
-	struct clk_ops		*ops;
-	struct clk_lookup	lookup;
-	const char		*name;
-	u32			module;
-	u32			flags;
-	unsigned long		rate_min;
-	u8			rate_tolerance;
-	bool			power;
-};	
-#else
 struct clk {
 	/* node for master clocks list */
-	struct list_head		node;
-	struct list_head		children;	/* list of children */
-	struct list_head		sibling;	/* node for children */
+	struct list_head	node;		/* node for list of all clocks */
+	struct dvfs 		*dvfs;
+	struct clk_lookup	lookup;
+
 #ifdef CONFIG_DEBUG_FS
-	struct dentry 			*dent;
-	struct dentry 			*parent_dent;
+	struct dentry		*dent;
 #endif
-	struct clk_ops			*ops;
-	struct clk			*parent;
-	struct clk_lookup		lookup;
-	unsigned long			rate;
-	u32				flags;
-	u32				refcnt;
-	const char			*name;
+	bool			set;
+	struct clk_ops		*ops;
+	unsigned long		dvfs_rate;
+	unsigned long		rate;
+	unsigned long		max_rate;
+	unsigned long		min_rate;
+	bool			auto_dvfs;
+	bool			cansleep;
+	u32			flags;
+	const char		*name;
+
+	u32			refcnt;
+	enum clk_state		state;
+	struct clk		*parent;
+	u32			div;
+	u32			mul;
+
+	const struct clk_mux_sel	*inputs;
 	u32				reg;
 	u32				reg_shift;
-	unsigned int			clk_num;
-	enum clk_state			state;
-#ifdef CONFIG_DEBUG_FS
-	bool				set;
-#endif
 
-	/* PLL */
-	unsigned long			input_min;
-	unsigned long			input_max;
-	unsigned long			cf_min;
-	unsigned long			cf_max;
-	unsigned long			vco_min;
-	unsigned long			vco_max;
-	u32				m;
-	u32				n;
-	u32				p;
-	u32				cpcon;
-	const struct clk_pll_table	*pll_table;
+	struct list_head		shared_bus_list;
 
-	/* DIV */
-	u32				div;
-	u32				mul;
+	union {
+		struct {
+			unsigned int			clk_num;
+		} periph;
+		struct {
+			unsigned long			input_min;
+			unsigned long			input_max;
+			unsigned long			cf_min;
+			unsigned long			cf_max;
+			unsigned long			vco_min;
+			unsigned long			vco_max;
+			const struct clk_pll_freq_table	*freq_table;
+			int				lock_delay;
+		} pll;
+		struct {
+			u32				sel;
+			u32				reg_mask;
+		} mux;
+		struct {
+			struct clk			*main;
+			struct clk			*backup;
+		} cpu;
+		struct {
+			struct list_head		node;
+			bool				enabled;
+			unsigned long			rate;
+		} shared_bus_user;
+	} u;
 
-	/* MUX */
-	const struct clk_mux_sel	*inputs;
-	u32				sel;
-	u32				reg_mask;
+	struct mutex mutex;
+	spinlock_t spinlock;
 };
-#endif
-
 
 struct clk_duplicate {
 	const char *name;
 	struct clk_lookup lookup;
 };
 
+struct tegra_clk_init_table {
+	const char *name;
+	const char *parent;
+	unsigned long rate;
+	bool enabled;
+};
+
 void tegra2_init_clocks(void);
 void tegra2_periph_reset_deassert(struct clk *c);
 void tegra2_periph_reset_assert(struct clk *c);
 void clk_init(struct clk *clk);
-struct clk *get_tegra_clock_by_name(const char *name);
+struct clk *tegra_get_clock_by_name(const char *name);
 unsigned long clk_measure_input_freq(void);
-void clk_disable_locked(struct clk *c);
-int clk_enable_locked(struct clk *c);
-int clk_set_parent_locked(struct clk *c, struct clk *parent);
 int clk_reparent(struct clk *c, struct clk *parent);
+void tegra_clk_init_from_table(struct tegra_clk_init_table *table);
+void clk_set_cansleep(struct clk *c);
+unsigned long clk_get_rate_locked(struct clk *c);
+int clk_set_rate_locked(struct clk *c, unsigned long rate);
+void tegra2_sdmmc_tap_delay(struct clk *c, int delay);
+
+static inline bool clk_is_auto_dvfs(struct clk *c)
+{
+	return c->auto_dvfs;
+}
+
+static inline bool clk_is_dvfs(struct clk *c)
+{
+	return (c->dvfs != NULL);
+}
+
+static inline bool clk_cansleep(struct clk *c)
+{
+	return c->cansleep;
+}
+
+static inline void clk_lock_save(struct clk *c, unsigned long *flags)
+{
+	if (clk_cansleep(c)) {
+		*flags = 0;
+		mutex_lock(&c->mutex);
+	} else {
+		spin_lock_irqsave(&c->spinlock, *flags);
+	}
+}
+
+static inline void clk_unlock_restore(struct clk *c, unsigned long *flags)
+{
+	if (clk_cansleep(c))
+		mutex_unlock(&c->mutex);
+	else
+		spin_unlock_irqrestore(&c->spinlock, *flags);
+}
+
+static inline void clk_lock_init(struct clk *c)
+{
+	mutex_init(&c->mutex);
+	spin_lock_init(&c->spinlock);
+}
 
 #endif

@@ -3,6 +3,6 @@
 export ARCH=arm
 export CROSS_COMPILE=arm-linux-gnueabi-
 
-export ANDROID_BUILD_TOP=/home/michael/android/system
-export LINUXSRCDIR=/home/michael/android/kernel/2.6.39.4/kernel
+export ANDROID_BUILD_TOP=~/android/system
+export LINUXSRCDIR=`pwd`
 
