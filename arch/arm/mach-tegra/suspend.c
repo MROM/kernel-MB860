@@ -37,6 +37,7 @@
 #include <asm/localtimer.h>
 #include <asm/tlbflush.h>
 #include <asm/cacheflush.h>
+#include <linux/slab.h>
 
 #include <mach/iomap.h>
 #include <mach/iovmm.h>
@@ -316,8 +317,8 @@ static noinline void restore_cpu_complex(bool wait_plls)
 	writel(tegra_sctx.twd_ctrl, twd_base + 0x8);
 	writel(tegra_sctx.twd_load, twd_base + 0);
 
-	gic_dist_restore(0);
-	get_irq_chip(IRQ_LOCALTIMER)->unmask(IRQ_LOCALTIMER);
+	//gic_dist_restore(0);
+	irq_get_chip(IRQ_LOCALTIMER)->irq_unmask(IRQ_LOCALTIMER);
 
 	if(tegra_nvrm_lp2_persist())
 		enable_irq(INT_SYS_STATS_MON);
@@ -342,7 +343,7 @@ static noinline void suspend_cpu_complex(void)
 
 	tegra_sctx.twd_ctrl = readl(twd_base + 0x8);
 	tegra_sctx.twd_load = readl(twd_base + 0);
-	local_timer_stop();
+	//local_timer_stop();
 
 	reg = readl(flow_ctrl + FLOW_CTRL_CPU_CSR);
 	/* clear any pending events, set the WFE bitmap to specify just
@@ -359,8 +360,6 @@ static noinline void suspend_cpu_complex(void)
 		wmb();
 	}
 
-	gic_cpu_exit(0);
-	gic_dist_exit(0);
 }
 
 unsigned int tegra_suspend_lp2(unsigned int us)
@@ -594,13 +593,14 @@ static void tegra_suspend_dram(bool lp0_ok)
 	tegra_setup_wakepads(lp0_ok);
 	suspend_cpu_complex();
 	flush_cache_all();
-	outer_shutdown();
+	outer_flush_all();
+	outer_disable();
 
 	__cortex_a9_save(mode);
 	restore_cpu_complex(false);
 
 	writel(orig, evp_reset);
-	outer_restart();
+	//outer_restart();
 	writel(on_timer, pmc + PMC_CPUPWRGOOD_TIMER);
 	writel(off_timer, pmc + PMC_CPUPWROFF_TIMER);
 
@@ -818,12 +818,12 @@ static int tegra_suspend_enter(suspend_state_t state)
 		mc_data[1] = readl(mc + MC_SECURITY_SIZE);
 	}
 
-	for_each_irq_desc(irq, desc) {
-		if ((desc->status & IRQ_WAKEUP) &&
-		    (desc->status & IRQ_SUSPENDED)) {
+	/*for_each_irq_desc(irq, desc) {
+		if ((desc->status_use_accessors & IRQD_WAKEUP_STATE) &&
+		    (desc->status_use_accessors & IRQ_SUSPENDED)) {
 			get_irq_chip(irq)->unmask(irq);
 		}
-	}
+	}*/
 
 	if (!pdata->dram_suspend || !iram_save) {
 		/* lie about the power state so that the RM restarts DVFS */
@@ -832,12 +832,12 @@ static int tegra_suspend_enter(suspend_state_t state)
 	} else
 		tegra_suspend_dram(pdata->core_off);
 
-	for_each_irq_desc(irq, desc) {
+	/*for_each_irq_desc(irq, desc) {
 		if ((desc->status & IRQ_WAKEUP) &&
 		    (desc->status & IRQ_SUSPENDED)) {
 			get_irq_chip(irq)->mask(irq);
 		}
-	}
+	}*/
 
 	/* Clear DPD sample */
 	writel(0x0, pmc + PMC_DPD_SAMPLE);
