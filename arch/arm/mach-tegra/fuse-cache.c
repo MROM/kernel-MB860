@@ -31,6 +31,8 @@
 #include <ap20/arclk_rst.h>
 #include <ap20/arfuse.h>
 
+#include <linux/slab.h>
+
 /* register definition */
 #define KFUSE_STATE 0x80
 #define KFUSE_STATE_DONE 0x10000

@@ -41,6 +41,17 @@ gic
       IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
 - get_irq_chip(29) --> irq_get_chip(29);
 
-clock.h replaced with stingray version
+clock.h
+- replaced with stingray version
 
-suspend.c git diff 4db4f6fa3c099793e6dcd071c6326942d010638d 0013f6f4188b97e461c9aebcd4870f64a5a3b66f suspend.c
+suspend.c
+- git diff 4db4f6fa3c099793e6dcd071c6326942d010638d 0013f6f4188b97e461c9aebcd4870f64a5a3b66f suspend.c
+
+platsmp.c
+- #include <linux/slab.h> "kmalloc, kzalloc, kfree"
+
+arch/arm/include/asm/smp.h
+- static void __cpuinit smp_store_cpu_info(unsigned int cpuid) --> void __cpuinit smp_store_cpu_info(unsigned int cpuid)
+
+arch/arm/mach-tegra/localtimer.c
+- replaced with original 2.6.39.4

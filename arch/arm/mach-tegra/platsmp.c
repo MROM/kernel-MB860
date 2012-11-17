@@ -34,7 +34,11 @@
 #include <asm/mmu_context.h>
 #include <asm/pgalloc.h>
 
+#include <asm/smp.h>
+
 #include <mach/iomap.h>
+
+#include <linux/slab.h>
 
 #include "power.h"
 
@@ -80,7 +84,9 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 #endif
 
 	trace_hardirqs_off();
-	gic_cpu_init(0, IO_ADDRESS(TEGRA_ARM_PERIF_BASE) + 0x100);
+	//gic_cpu_init(0, IO_ADDRESS(TEGRA_ARM_PERIF_BASE) + 0x100);
+	gic_init(0, 29, IO_ADDRESS(TEGRA_ARM_INT_DIST_BASE),
+      		IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
 	/*
 	 * Synchronise with the boot thread.
 	 */
@@ -308,7 +314,7 @@ void platform_cpu_die(unsigned int cpu)
 	}
 #endif
 
-	gic_cpu_exit(0);
+	//gic_cpu_exit(0);
 	barrier();
 	complete(&per_cpu(cpu_killed, cpu));
 	flush_cache_all();

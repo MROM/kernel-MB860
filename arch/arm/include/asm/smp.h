@@ -101,3 +101,9 @@ extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
 extern void show_local_irqs(struct seq_file *, int);
 
 #endif /* ifndef __ASM_ARM_SMP_H */
+
+/*
+ * Move global data into per-processor storage.
+ */
+void __cpuinit smp_store_cpu_info(unsigned int cpuid);
+
