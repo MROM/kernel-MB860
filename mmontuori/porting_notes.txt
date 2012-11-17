@@ -1,0 +1,46 @@
+Notes for porting kernel from Motorola XOOM (stingray) to Motorola Atrix (olympus)
+
+irq:
+- function get_irq_desc_data(desc) --> irq_desc_get_handler_data(desc)
+- desc->chip->ack(irq) --> irq_desc_get_chip(desc)->irq_ack(irq_desc_get_irq_data(desc))
+- desc->chip->unmask(irq) --> irq_desc_get_chip(desc)->irq_unmask(irq_desc_get_irq_data(desc));
+- struct irq_chip prepend irq_ to members
+- set_irq_affinity --> irq_set_affinity
+- set_irq_chip --> irq_set_chip
+- set_irq_handler --> irq_set_handler
+- desc->status_use_accessors & IRQD_WAKEUP_STATE
+- get_irq_chip_data(irq) --> irq_get_chip_data(irq);
+- desc->chip->ack(irq) --> irq_desc_get_chip(desc)->irq_ack(irq_desc_get_irq_data(desc));
+- get_irq_data(irq) --> irq_get_irq_data(irq)
+- /*if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
+  +       if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
+                __set_irq_handler_unlocked(irq, handle_level_irq);
+        else if (type & (IRQ_TYPE_EDGE_FALLING | IRQ_TYPE_EDGE_RISING))
+  -               __set_irq_handler_unlocked(irq, handle_edge_irq);*/
+  -
+  -       if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
+  -                __irq_set_handler_locked(irq, handle_level_irq);
+  -        else if (type & (IRQ_TYPE_EDGE_FALLING | IRQ_TYPE_EDGE_RISING))
+  -                __irq_set_handler_locked(irq, handle_edge_irq);
+  +               __set_irq_handler_unlocked(irq, handle_edge_irq);
+- desc->chip->unmask(irq) --> irq_desc_get_chip(desc)->irq_unmask(irq_desc_get_irq_data(desc));
+- for_each_bit(pin, &sta, 8) --> for_each_set_bit(pin, &sta, 8)
+- get_irq_chip_data(irq) --> irq_get_chip_data(irq);
+- set_irq_wake(bank->irq, enable) --> irq_set_irq_wake(bank->irq, enable);
+- set_irq_chip_data(i, bank) --> irq_set_chip_data(i, bank);
+- set_irq_chip(i, &tegra_gpio_irq_chip) --> irq_set_chip(i, &tegra_gpio_irq_chip);
+- set_irq_handler(i, handle_simple_irq) --> irq_set_handler(i, handle_simple_irq);
+- set_irq_chained_handler(bank->irq, tegra_gpio_irq_handler) --> irq_set_chained_handler(bank->irq, tegra_gpio_irq_handler);
+- set_irq_data(bank->irq, bank) --> irq_set_chip_data(bank->irq, bank)
+
+gic
+- gic_dist_init(0, IO_ADDRESS(TEGRA_ARM_INT_DIST_BASE), 29);
+  gic_cpu_init(0, IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
+  -->
+  gic_init(0, 29, IO_ADDRESS(TEGRA_ARM_INT_DIST_BASE),
+      IO_ADDRESS(TEGRA_ARM_PERIF_BASE + 0x100));
+- get_irq_chip(29) --> irq_get_chip(29);
+
+clock.h replaced with stingray version
+
+suspend.c git diff 4db4f6fa3c099793e6dcd071c6326942d010638d 0013f6f4188b97e461c9aebcd4870f64a5a3b66f suspend.c
