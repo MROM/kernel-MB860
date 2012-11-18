@@ -484,20 +484,20 @@ extern void __init tegra_register_socdev(void);
 /* IMPORTANT: backlight has to be first, don't move it!!! */
 static struct i2c_board_info tegra_i2c_bus0_board_info[] = {
 	[BACKLIGHT_DEV] = { /* Display backlight */
-		I2C_BOARD_INFO(LM3532_NAME, LM3532_I2C_ADDR),
+		//I2C_BOARD_INFO(LM3532_NAME, LM3532_I2C_ADDR),
 		.platform_data = &lm3532_pdata,
 		/*.irq = ..., */
 	},
 	[TOUCHSCREEN_DEV] = {
 		/* XMegaT touchscreen driver */
-		I2C_BOARD_INFO(QTOUCH_TS_NAME, XMEGAT_I2C_ADDR),
+		//I2C_BOARD_INFO(QTOUCH_TS_NAME, XMEGAT_I2C_ADDR),
 		.irq = TOUCH_GPIO_INTR,
 		.platform_data = &ts_platform_olympus_m_1,
 	},
 #if defined(CONFIG_TEGRA_ODM_OLYMPUS)
 	{
 		/*  ISL 29030 (prox/ALS) driver */
-		I2C_BOARD_INFO(LD_ISL29030_NAME, 0x44),
+		//I2C_BOARD_INFO(LD_ISL29030_NAME, 0x44),
 		.platform_data = &isl29030_als_ir_data_Olympus,
 		.irq = 180,
 	},
@@ -676,7 +676,7 @@ static void __init tegra_mot_init(void)
 		tegra_uart_platform[UART_IPC_OLYMPUS].uart_ipc = 1;
 		tegra_uart_platform[UART_IPC_OLYMPUS].uart_wake_host = TEGRA_GPIO_PA0;
 		tegra_uart_platform[UART_IPC_OLYMPUS].uart_wake_request = TEGRA_GPIO_PF1;
-		tegra_uart_platform[UART_IPC_OLYMPUS].peer_register = mot_mdm_ctrl_peer_register;
+		//tegra_uart_platform[UART_IPC_OLYMPUS].peer_register = mot_mdm_ctrl_peer_register;
 	}
 	else if(machine_is_etna()) {
 		if (HWREV_TYPE_IS_BRASSBOARD(system_rev)) {
@@ -687,20 +687,20 @@ static void __init tegra_mot_init(void)
 			tegra_uart_platform[UART_IPC_ETNA].uart_ipc = 1;
 			tegra_uart_platform[UART_IPC_ETNA].uart_wake_host = TEGRA_GPIO_PA0;
 			tegra_uart_platform[UART_IPC_ETNA].uart_wake_request = TEGRA_GPIO_PF1;
-			tegra_uart_platform[UART_IPC_ETNA].peer_register = mot_mdm_ctrl_peer_register;
+			//tegra_uart_platform[UART_IPC_ETNA].peer_register = mot_mdm_ctrl_peer_register;
 		}
 	}
 	else if(machine_is_tegra_daytona()) {
 		tegra_uart_platform[UART_IPC_DAYTONA].uart_ipc = 1;
 		tegra_uart_platform[UART_IPC_DAYTONA].uart_wake_host = TEGRA_GPIO_PA0;
 		tegra_uart_platform[UART_IPC_DAYTONA].uart_wake_request = TEGRA_GPIO_PF1;
-		tegra_uart_platform[UART_IPC_DAYTONA].peer_register = mot_mdm_ctrl_peer_register;
+		//tegra_uart_platform[UART_IPC_DAYTONA].peer_register = mot_mdm_ctrl_peer_register;
 	}
 	else if(machine_is_sunfire()) {
 		tegra_uart_platform[UART_IPC_SUNFIRE].uart_ipc = 1;
 		tegra_uart_platform[UART_IPC_SUNFIRE].uart_wake_host = TEGRA_GPIO_PA0;
 		tegra_uart_platform[UART_IPC_SUNFIRE].uart_wake_request = TEGRA_GPIO_PF1;
-		tegra_uart_platform[UART_IPC_SUNFIRE].peer_register = mot_mdm_ctrl_peer_register;
+		//tegra_uart_platform[UART_IPC_SUNFIRE].peer_register = mot_mdm_ctrl_peer_register;
 	}
 
 	/*if( (bi_powerup_reason() & PWRUP_FACTORY_CABLE) &&

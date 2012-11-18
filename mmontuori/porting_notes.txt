@@ -57,3 +57,31 @@ arch/arm/mach-tegra/localtimer.c
 - replaced with original 2.6.39.4
 
 porting boards: commits 7deb7961925d95e21991ad240466fccbbb8d2947
+
+following errors have to be resolved in final version:
+- arch/arm/mach-tegra/board-mot.c:487:3: error: ‘LM3532_NAME’ undeclared here (not in a function)
+- arch/arm/mach-tegra/board-mot.c:487:3: error: ‘LM3532_I2C_ADDR’ undeclared here (not in a function)
+- arch/arm/mach-tegra/board-mot.c:493:3: error: ‘XMEGAT_I2C_ADDR’ undeclared here (not in a function)
+- arch/arm/mach-tegra/board-mot.c:500:3: error: ‘LD_ISL29030_NAME’ undeclared here (not in a function)
+
+arch/arm/mach-tegra/include/mach/serial.h:
+- serial.h:44:2: error: unknown type name ‘mdm_ctrl_peer_register_t’
+
+arch/arm/mach-tegra/board-mot.c: In function ‘tegra_mot_init’:
+- arch/arm/mach-tegra/board-mot.c:679:40: error: ‘struct tegra_serial_platform_data’ has no member named ‘peer_register’
+- arch/arm/mach-tegra/board-mot.c:690:38: error: ‘struct tegra_serial_platform_data’ has no member named ‘peer_register’
+- arch/arm/mach-tegra/board-mot.c:697:40: error: ‘struct tegra_serial_platform_data’ has no member named ‘peer_register’
+- arch/arm/mach-tegra/board-mot.c:703:40: error: ‘struct tegra_serial_platform_data’ has no member named ‘peer_register’
+
+linux/usb/android_composite.h --> linux/usb/composite.h
+
+arch/arm/mach-tegra/board-mot-power.c
+- if (cpcap_misc_is_ext_power() &&
+           !((bi_powerup_reason() & PWRUP_FACTORY_CABLE) &&
+             (bi_powerup_reason() != PWRUP_INVALID)) )
+        {
+                printk("External power detected- rebooting\r\n");
+                cpcap_misc_clear_power_handoff_info();
+                tegra_machine_restart(0,"");
+                while(1);
+        }

@@ -24,13 +24,15 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/fixed.h>
 #include <linux/regulator/machine.h>
-#include <linux/usb/android_composite.h>
+//#include <linux/usb/android_composite.h>
+#include <linux/platform_data/tegra_usb.h>
 #include <linux/gpio.h>
 #include <linux/cpcap-accy.h>
 #include <nvrm_module.h>
 #include <nvrm_boot.h>
 #include <nvodm_services.h>
-#include <linux/mdm_ctrl.h>
+//#include <linux/mdm_ctrl.h>
+#include <linux/radio_ctrl/mdm6600_ctrl.h>
 
 #include "gpio-names.h"
 #include "board.h"
@@ -46,7 +48,7 @@ void mot_system_power_off(void)
 	/* If there's external power, let's restart instead ...
 	   except for the case when phone was powered on with factory cable
 	   and thus has to stay powered off after Turn-Off TCMD INKVSSW-994 */
-	if (cpcap_misc_is_ext_power() &&
+	/*if (cpcap_misc_is_ext_power() &&
 	   !((bi_powerup_reason() & PWRUP_FACTORY_CABLE) &&
 	     (bi_powerup_reason() != PWRUP_INVALID)) )
 	{
@@ -54,7 +56,7 @@ void mot_system_power_off(void)
 		cpcap_misc_clear_power_handoff_info();
 		tegra_machine_restart(0,"");
 		while(1);
-	}
+	}*/
 
 	printk(KERN_ERR "%s(): Powering down system\n", __func__);
 
@@ -62,7 +64,7 @@ void mot_system_power_off(void)
 	class_for_each_device(rtc_class, NULL, NULL, disable_rtc_alarms);
 
 	/* Disable powercut detection before power off */
-	cpcap_disable_powercut();
+	//cpcap_disable_powercut();
 
 	/* We need to set the WDI bit low to power down normally */
 	if (machine_is_olympus())
@@ -102,11 +104,11 @@ void mot_system_power_off(void)
 			gpio_set_value(TEGRA_GPIO_PT4, 0);
 
 			/* Etna P1B-P3C has a gate on WDI */
-			if ( machine_is_etna() &&
+			/*if ( machine_is_etna() &&
 			     ( HWREV_TYPE_IS_PORTABLE(system_rev) &&
 			       ( HWREV_REV(system_rev) >= HWREV_REV_1B &&
 				 HWREV_REV(system_rev) <  HWREV_REV_4 )))
-				cpcap_set_wdigate(0);
+				 cpcap_set_wdigate(0);*/
 		}
 	}
 	else if (machine_is_tegra_daytona())
@@ -120,7 +122,7 @@ void mot_system_power_off(void)
 			gpio_request(TEGRA_GPIO_PT4, "S2 WDI");
 			gpio_direction_output(TEGRA_GPIO_PT4, 1);
 			gpio_set_value(TEGRA_GPIO_PT4, 0);
-			cpcap_set_wdigate(0);
+			//cpcap_set_wdigate(0);
 	}
 	else
 	{
@@ -209,7 +211,7 @@ enum cpcap_revision cpcap_get_revision(struct cpcap_device *cpcap)
 
 int is_cpcap_eq_3_1(struct cpcap_device *cpcap)
 {
-	return cpcap_get_revision(cpcap) == CPCAP_REVISION_3_1;
+	return cpcap_get_revision(cpcap) == CPCAP_REVISION_2_1;
 }
 
 struct cpcap_spi_init_data tegra_cpcap_spi_init[] = {
@@ -313,21 +315,70 @@ struct cpcap_leds tegra_cpcap_leds = {
 extern struct platform_device cpcap_disp_button_led;
 extern struct platform_device cpcap_rgb_led;
 
+/*unsigned short cpcap_regulator_mode_values[CPCAP_NUM_REGULATORS] = {
+        [CPCAP_SW2]      = 0x0800,
+        [CPCAP_SW4]      = 0x0900,
+        [CPCAP_SW5]      = 0x0022,
+        [CPCAP_VCAM]     = 0x0007,
+        [CPCAP_VCSI]     = 0x0007,
+        [CPCAP_VDAC]     = 0x0003,
+        [CPCAP_VDIG]     = 0x0005,
+        [CPCAP_VFUSE]    = 0x0080,
+        [CPCAP_VHVIO]    = 0x0002,
+        [CPCAP_VSDIO]    = 0x0002,
+        [CPCAP_VPLL]     = 0x0001,
+        [CPCAP_VRF1]     = 0x000C,
+        [CPCAP_VRF2]     = 0x0003,
+        [CPCAP_VRFREF]   = 0x0003,
+        [CPCAP_VWLAN1]   = 0x0005,
+        [CPCAP_VWLAN2]   = 0x0008,
+        [CPCAP_VSIM]     = 0x0003,
+        [CPCAP_VSIMCARD] = 0x1E00,
+        [CPCAP_VVIB]     = 0x0001,
+        [CPCAP_VUSB]     = 0x000C,
+        [CPCAP_VAUDIO]   = 0x0004,
+};
+
+unsigned short cpcap_regulator_off_mode_values[CPCAP_NUM_REGULATORS] = {
+        [CPCAP_SW2]      = 0x0000,
+        [CPCAP_SW4]      = 0x0000,
+        [CPCAP_SW5]      = 0x0000,
+        [CPCAP_VCAM]     = 0x0000,
+        [CPCAP_VCSI]     = 0x0000,
+        [CPCAP_VDAC]     = 0x0000,
+        [CPCAP_VDIG]     = 0x0000,
+        [CPCAP_VFUSE]    = 0x0000,
+        [CPCAP_VHVIO]    = 0x0000,
+        [CPCAP_VSDIO]    = 0x0000,
+        [CPCAP_VPLL]     = 0x0000,
+        [CPCAP_VRF1]     = 0x0000,
+        [CPCAP_VRF2]     = 0x0000,
+        [CPCAP_VRFREF]   = 0x0000,
+        [CPCAP_VWLAN1]   = 0x0000,
+        [CPCAP_VWLAN2]   = 0x0000,
+        [CPCAP_VSIM]     = 0x0000,
+        [CPCAP_VSIMCARD] = 0x0000,
+        [CPCAP_VVIB]     = 0x0000,
+        [CPCAP_VUSB]     = 0x0000,
+        [CPCAP_VAUDIO]   = 0x0000,
+};*/
+
+
 struct cpcap_mode_value *cpcap_regulator_mode_values[] = {
-	[CPCAP_SW1] = (struct cpcap_mode_value []) {
-		/* AMS/AMS Primary control via Macro */
-		{0x6800, NULL }
-	},
+	//[CPCAP_SW1] = (struct cpcap_mode_value []) {
+	//	/* AMS/AMS Primary control via Macro */
+	//	{0x6800, NULL }
+	//},
 	[CPCAP_SW2] = (struct cpcap_mode_value []) {
 		/* AMS/AMS Secondary control via Macro */
 		{0x4804, NULL }
 	},
-	[CPCAP_SW3] = (struct cpcap_mode_value []) {
-		/* AMS/AMS Secondary Standby */
-		{0x0040, is_cpcap_eq_3_1  },
-		/* Pulse Skip/PFM Secondary Standby */
-		{0x043c, NULL             },
-	},
+	//[CPCAP_SW3] = (struct cpcap_mode_value []) {
+	//	/* AMS/AMS Secondary Standby */
+	//	{0x0040, is_cpcap_eq_3_1  },
+	//	/* Pulse Skip/PFM Secondary Standby */
+	//	{0x043c, NULL             },
+	//},
 	[CPCAP_SW4] = (struct cpcap_mode_value []) {
 		/* AMS/AMS Secondary Standby */
 		{ 0x0800, is_cpcap_eq_3_1  },
@@ -1064,37 +1115,37 @@ void mot_setup_power(void)
 	 * 4. regulator control for button LED is removed for P2C+ & S3+ (moved to B+)
 	 * 5. regulator control for RGB LED is removed for P4FB+ (moved to B+)
 	 */
-	else if (machine_is_etna()) {
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_3B))) {
-			tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
-		}
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_2)) ||
-		     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_3)) ){
-			fixed_sdio_config.enabled_at_boot = 0;
-		} else {
-			fixed_sdio_config.enabled_at_boot = 1;
-		}
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_2C)) ||
-		     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_3)) ) {
-			tegra_cpcap_leds.button_led.regulator = NULL;
-		}
-
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_4FB)) ) {
-			tegra_cpcap_leds.rgb_led.regulator = NULL;
-		} else {
-			tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
-		}
-	}
+	//else if (machine_is_etna()) {
+	//	if ( HWREV_TYPE_IS_FINAL(system_rev) ||
+	//	     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
+	//	       (HWREV_REV(system_rev) >= HWREV_REV_3B))) {
+	//		tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
+	//	}
+	//	if ( HWREV_TYPE_IS_FINAL(system_rev) ||
+	//	     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
+	//	       (HWREV_REV(system_rev) >= HWREV_REV_2)) ||
+	//	     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
+	//	       (HWREV_REV(system_rev) >= HWREV_REV_3)) ){
+	//		fixed_sdio_config.enabled_at_boot = 0;
+	//	} else {
+	//		fixed_sdio_config.enabled_at_boot = 1;
+	//	}
+	//	if ( HWREV_TYPE_IS_FINAL(system_rev) ||
+	//	     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
+	//	       (HWREV_REV(system_rev) >= HWREV_REV_2C)) ||
+	//	     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
+	//	       (HWREV_REV(system_rev) >= HWREV_REV_3)) ) {
+	//		tegra_cpcap_leds.button_led.regulator = NULL;
+	//	}
+	//
+	//	if ( HWREV_TYPE_IS_FINAL(system_rev) ||
+	//	     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
+	//	       (HWREV_REV(system_rev) >= HWREV_REV_4FB)) ) {
+	//		tegra_cpcap_leds.rgb_led.regulator = NULL;
+	//	} else {
+	//		tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
+	//	}
+	//}
 	/* For Daytona the following is done
 	 * 1. VWLAN1 is shutdown all the time
 	 */
@@ -1107,38 +1158,38 @@ void mot_setup_power(void)
 	 * 3. Regulator control for button LED is removed (on B+)
 	 * 4. SW5 is enabled in the blink macro
 	 */
-	else if (machine_is_sunfire()) {
-		tegra_cpcap_data.hwcfg[1] |= CPCAP_HWCFG1_SEC_STBY_VWLAN2;
-		tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
-		cpcap_regulator[CPCAP_VWLAN2].constraints.always_on = 0;
-		tegra_cpcap_leds.button_led.regulator = NULL;
-		tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
-	}
+	//else if (machine_is_sunfire()) {
+	//	tegra_cpcap_data.hwcfg[1] |= CPCAP_HWCFG1_SEC_STBY_VWLAN2;
+	//	tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
+	//	cpcap_regulator[CPCAP_VWLAN2].constraints.always_on = 0;
+	//	tegra_cpcap_leds.button_led.regulator = NULL;
+	//	tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
+	//}
 	else {
 		printk(KERN_ERR "Unkown hardware type encountered: 0x%x\n", machine_arch_type);
 	}
 
-	if ((machine_is_etna() &&
-	     (HWREV_TYPE_IS_FINAL(system_rev) ||
-	        (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		(HWREV_REV(system_rev)  >= HWREV_REV_1)))) ||
-		machine_is_tegra_daytona() || machine_is_sunfire()) {
-		printk(KERN_INFO "%s: updating button backlight for portable\n",
-		       __func__);
-		tegra_cpcap_leds.button_led.button_reg = CPCAP_REG_ADLC;
-		tegra_cpcap_leds.button_led.button_mask = 0x7FF;
-		tegra_cpcap_leds.button_led.button_on = 0x67F3;
-	}
-	if (machine_is_tegra_daytona()) {
+	//if ((machine_is_etna() &&
+	//     (HWREV_TYPE_IS_FINAL(system_rev) ||
+	//        (HWREV_TYPE_IS_PORTABLE(system_rev) &&
+	//	(HWREV_REV(system_rev)  >= HWREV_REV_1)))) ||
+	//	machine_is_tegra_daytona() || machine_is_sunfire()) {
+	//	printk(KERN_INFO "%s: updating button backlight for portable\n",
+	//	       __func__);
+	//	tegra_cpcap_leds.button_led.button_reg = CPCAP_REG_ADLC;
+	//	tegra_cpcap_leds.button_led.button_mask = 0x7FF;
+	//	tegra_cpcap_leds.button_led.button_on = 0x67F3;
+	//}
+	//if (machine_is_tegra_daytona()) {
 		/* IKDAYTONA-123  reduce current through 4 android hard keys */
-		tegra_cpcap_leds.button_led.button_mask = 0x7FF;
-		tegra_cpcap_leds.button_led.button_on = 0x7F1;
-	}
+		//tegra_cpcap_leds.button_led.button_mask = 0x7FF;
+		//tegra_cpcap_leds.button_led.button_on = 0x7F1;
+	//}
 	/* For all machine types, disable watchdog when HWREV is debug, brassboard or mortable */
-	if (HWREV_TYPE_IS_DEBUG(system_rev) || HWREV_TYPE_IS_BRASSBOARD(system_rev) ||
-	    HWREV_TYPE_IS_MORTABLE(system_rev) ){
-		tegra_cpcap_data.wdt_disable = 1;
-	}
+	// if (HWREV_TYPE_IS_DEBUG(system_rev) || HWREV_TYPE_IS_BRASSBOARD(system_rev) ||
+	    // HWREV_TYPE_IS_MORTABLE(system_rev) ){
+		// tegra_cpcap_data.wdt_disable = 1;
+	// }
 
 	spi_register_board_info(tegra_spi_devices, ARRAY_SIZE(tegra_spi_devices));
 
