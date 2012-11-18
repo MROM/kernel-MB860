@@ -21,6 +21,7 @@
 #include <linux/io.h>
 #include <linux/cpu.h>
 #include <linux/nvmap.h>
+#include <linux/memblock.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/cacheflush.h>
@@ -29,6 +30,8 @@
 #include <mach/iomap.h>
 #include <mach/dma.h>
 #include <mach/fuse.h>
+
+#include "clock.h"
 
 #ifdef CONFIG_MFD_CPCAP
 #include <linux/spi/cpcap.h>
@@ -43,6 +46,46 @@
 #define FUSE_VISIBILITY_BIT_POS		28
 #define FUSE_SPARE_BIT_18_REG_OFFSET		0x248
 #define FUSE_SPARE_BIT_19_REG_OFFSET		0x24c
+
+static unsigned long ramconsole_start = SZ_512M - SZ_1M;
+static unsigned long ramconsole_size = SZ_1M;
+
+unsigned long tegra_bootloader_fb_start;
+unsigned long tegra_bootloader_fb_size;
+unsigned long tegra_fb_start;
+unsigned long tegra_fb_size;
+unsigned long tegra_fb2_start;
+unsigned long tegra_fb2_size;
+unsigned long tegra_carveout_start;
+unsigned long tegra_carveout_size;
+unsigned long tegra_lp0_vec_start;
+unsigned long tegra_lp0_vec_size;
+unsigned long tegra_grhost_aperture;
+
+
+static __initdata struct tegra_clk_init_table common_clk_init_table[] = {
+        /* name         parent          rate            enabled */
+        { "clk_m",      NULL,           0,              true },
+        { "pll_p",      "clk_m",        216000000,      true },
+        { "pll_p_out1", "pll_p",        28800000,       true },
+        { "pll_p_out2", "pll_p",        48000000,       true },
+        { "pll_p_out3", "pll_p",        72000000,       true },
+        { "pll_p_out4", "pll_p",        108000000,      true },
+        { "pll_m_out1", "pll_m",        120000000,      true },
+        { "sclk",       "pll_m_out1",   120000000,      true },
+        { "hclk",       "sclk",         120000000,      true },
+        { "pclk",       "hclk",         60000000,       true },
+        { "csite",      NULL,           0,              true },
+        { "emc",        NULL,           0,              true },
+        { "cpu",        NULL,           0,              true },
+        { "kfuse",      NULL,           0,              true },
+        { "pll_u",      "clk_m",        480000000,      false },
+        { "sdmmc1",     "pll_p",        48000000,       false},
+        { "sdmmc2",     "pll_p",        48000000,       false},
+        { "sdmmc3",     "pll_p",        48000000,       false},
+        { "sdmmc4",     "pll_p",        48000000,       false},
+        { NULL,         NULL,           0,              0},
+};
 
 bool tegra_chip_compare(u32 chip, u32 major_rev, u32 minor_rev)
 {
@@ -131,6 +174,18 @@ void __init tegra_init_cache(void)
 #endif
 }
 
+void __init tegra_init_early(void)
+{
+        arm_pm_restart = tegra_machine_restart;
+        tegra_init_fuse_cache();
+        //tegra_gpio_resume_init();
+        tegra_init_clock();
+        //tegra_init_pinmux();
+        tegra_clk_init_from_table(common_clk_init_table);
+        //tegra_init_power();
+        tegra_init_cache();
+}
+
 void __init tegra_common_init(void)
 {
 #ifdef CONFIG_CPU_V7
@@ -149,4 +204,97 @@ void __init tegra_common_init(void)
 	tegra_dma_init();
 	tegra_mc_init();
 	arm_pm_restart = tegra_machine_restart;
+}
+
+void __init tegra_reserve(unsigned long carveout_size, unsigned long fb_size,
+	unsigned long fb2_size)
+{
+	if (tegra_lp0_vec_size)
+		if (memblock_reserve(tegra_lp0_vec_start, tegra_lp0_vec_size))
+			pr_err("Failed to reserve lp0_vec %08lx@%08lx\n",
+				tegra_lp0_vec_size, tegra_lp0_vec_start);
+
+
+	tegra_carveout_start = memblock_end_of_DRAM() - carveout_size;
+	if (memblock_remove(tegra_carveout_start, carveout_size))
+		pr_err("Failed to remove carveout %08lx@%08lx from memory "
+			"map\n",
+			tegra_carveout_start, carveout_size);
+	else
+		tegra_carveout_size = carveout_size;
+
+	tegra_fb2_start = memblock_end_of_DRAM() - fb2_size;
+	if (memblock_remove(tegra_fb2_start, fb2_size))
+		pr_err("Failed to remove second framebuffer %08lx@%08lx from "
+			"memory map\n",
+			tegra_fb2_start, fb2_size);
+	else
+		tegra_fb2_size = fb2_size;
+
+	tegra_fb_start = memblock_end_of_DRAM() - fb_size;
+	if (memblock_remove(tegra_fb_start, fb_size))
+		pr_err("Failed to remove framebuffer %08lx@%08lx from memory "
+			"map\n",
+			tegra_fb_start, fb_size);
+	else
+		tegra_fb_size = fb_size;
+
+	if (tegra_fb_size)
+		tegra_grhost_aperture = tegra_fb_start;
+
+	if (tegra_fb2_size && tegra_fb2_start < tegra_grhost_aperture)
+		tegra_grhost_aperture = tegra_fb2_start;
+
+	if (tegra_carveout_size && tegra_carveout_start < tegra_grhost_aperture)
+		tegra_grhost_aperture = tegra_carveout_start;
+
+	/*
+	 * TODO: We should copy the bootloader's framebuffer to the framebuffer
+	 * allocated above, and then free this one.
+	 */
+	if (tegra_bootloader_fb_size)
+		if (memblock_reserve(tegra_bootloader_fb_start,
+				tegra_bootloader_fb_size))
+			pr_err("Failed to reserve lp0_vec %08lx@%08lx\n",
+				tegra_lp0_vec_size, tegra_lp0_vec_start);
+
+	pr_info("Tegra reserved memory:\n"
+		"LP0:                    %08lx - %08lx\n"
+		"Bootloader framebuffer: %08lx - %08lx\n"
+		"Framebuffer:            %08lx - %08lx\n"
+		"2nd Framebuffer:         %08lx - %08lx\n"
+		"Carveout:               %08lx - %08lx\n",
+		tegra_lp0_vec_start,
+		tegra_lp0_vec_start + tegra_lp0_vec_size - 1,
+		tegra_bootloader_fb_start,
+		tegra_bootloader_fb_start + tegra_bootloader_fb_size - 1,
+		tegra_fb_start,
+		tegra_fb_start + tegra_fb_size - 1,
+		tegra_fb2_start,
+		tegra_fb2_start + tegra_fb2_size - 1,
+		tegra_carveout_start,
+		tegra_carveout_start + tegra_carveout_size - 1);
+}
+
+void __init generic_reserve(void)
+{
+        long ret;
+        if (memblock_reserve(0x0, 4096) < 0)
+                pr_warn("Cannot reserve first 4K of memory for safety\n");
+
+        ret = memblock_remove(SZ_512M - SZ_2M, SZ_2M);
+        if (ret)
+                pr_info("Failed to remove ram console\n");
+        else
+                pr_info("Reserved %08lx@%08lx for ram console\n",
+                        ramconsole_start, ramconsole_size);
+
+        tegra_reserve(SZ_256M, SZ_8M, SZ_16M);
+
+        if (memblock_reserve(tegra_bootloader_fb_start, tegra_bootloader_fb_size))
+                pr_info("Failed to reserve old framebuffer location\n");
+        else
+                pr_info("HACK: Old framebuffer:  %08lx - %08lx\n",
+                        tegra_bootloader_fb_start,
+                        tegra_bootloader_fb_start + tegra_bootloader_fb_size - 1);
 }

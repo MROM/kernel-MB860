@@ -41,9 +41,7 @@ struct tegra_serial_platform_data {
 	unsigned		uart_wake_host;
 	unsigned		uart_wake_request;
 	bool			uart_ipc;
-# ifdef CONFIG_MDM_CTRL
 	mdm_ctrl_peer_register_t peer_register;
-# endif
 #endif
 };
 

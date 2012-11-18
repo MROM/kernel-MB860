@@ -54,10 +54,10 @@
 #include "gpio-names.h"
 
 #include <linux/qtouch_obp_ts.h>
-#include <linux/isl29030.h>
+//#include <linux/config/input/als/ir/isl29030.h>
 
-#include <linux/leds-lm3530.h>
-#include <linux/leds-lm3532.h>
+#include <linux/led-lm3530.h>
+//#include <linux/led-lm3532.h>
 #include <linux/l3g4200d.h>
 
 #include "board.h"
@@ -703,12 +703,12 @@ static void __init tegra_mot_init(void)
 		tegra_uart_platform[UART_IPC_SUNFIRE].peer_register = mot_mdm_ctrl_peer_register;
 	}
 
-	if( (bi_powerup_reason() & PWRUP_FACTORY_CABLE) &&
+	/*if( (bi_powerup_reason() & PWRUP_FACTORY_CABLE) &&
 	    (bi_powerup_reason() != PWRUP_INVALID) ){
 #ifdef NEED_FACT_BUSY_HINT
 		FactoryBusyHint(); //factory workaround no longer needed
 #endif
-	}
+	}*/
 
 	mot_modem_init();
 
@@ -724,7 +724,7 @@ static void __init tegra_mot_init(void)
 
 	printk("%s: registering i2c devices...\n", __func__);
 
-	if(!(bi_powerup_reason() & PWRUP_BAREBOARD)) {
+	if(!(PWRUP_BAREBOARD)) {
 		printk("bus 0: %d devices\n", ARRAY_SIZE(tegra_i2c_bus0_board_info));
 		i2c_register_board_info(0, tegra_i2c_bus0_board_info, 
 								ARRAY_SIZE(tegra_i2c_bus0_board_info));
