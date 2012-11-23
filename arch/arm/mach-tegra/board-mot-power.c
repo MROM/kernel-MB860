@@ -65,66 +65,21 @@ void mot_system_power_off(void)
 	cpcap_disable_powercut();
 
 	/* We need to set the WDI bit low to power down normally */
-	if (machine_is_olympus())
+	if (HWREV_TYPE_IS_PORTABLE(system_rev) &&
+	    HWREV_REV(system_rev) >= HWREV_REV_1 &&
+	    HWREV_REV(system_rev) <= HWREV_REV_1C )
 	{
-		if (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		    HWREV_REV(system_rev) >= HWREV_REV_1 &&
-		    HWREV_REV(system_rev) <= HWREV_REV_1C )
-		{
-			/* Olympus P1 */
-			gpio_request(TEGRA_GPIO_PT4, "P1 WDI");
-			gpio_direction_output(TEGRA_GPIO_PT4, 1);
-			gpio_set_value(TEGRA_GPIO_PT4, 0);
-		}
-		else
-		{
-			/* Olympus Mortable, P0, P2 and later */
-			gpio_request(TEGRA_GPIO_PV7, "P2 WDI");
-			gpio_direction_output(TEGRA_GPIO_PV7, 1);
-			gpio_set_value(TEGRA_GPIO_PV7, 0);
-		}
-	}
-	else if (machine_is_etna())
-	{
-		if ( HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-		     HWREV_REV(system_rev) == HWREV_REV_1 )
-		{
-			// Etna S1
-			gpio_request(TEGRA_GPIO_PK4, "S1 WDI");
-			gpio_direction_output(TEGRA_GPIO_PK4, 1);
-			gpio_set_value(TEGRA_GPIO_PK4, 0);
-		}
-		else
-		{
-			// Etna S2, P1 and later
-			gpio_request(TEGRA_GPIO_PT4, "S2 WDI");
-			gpio_direction_output(TEGRA_GPIO_PT4, 1);
-			gpio_set_value(TEGRA_GPIO_PT4, 0);
-
-			/* Etna P1B-P3C has a gate on WDI */
-			if ( machine_is_etna() &&
-			     ( HWREV_TYPE_IS_PORTABLE(system_rev) &&
-			       ( HWREV_REV(system_rev) >= HWREV_REV_1B &&
-				 HWREV_REV(system_rev) <  HWREV_REV_4 )))
-				cpcap_set_wdigate(0);
-		}
-	}
-	else if (machine_is_tegra_daytona())
-	{
-                        gpio_request(TEGRA_GPIO_PV7, "P2 WDI");
-                        gpio_direction_output(TEGRA_GPIO_PV7, 1);
-                        gpio_set_value(TEGRA_GPIO_PV7, 0);
-	}
-	else if (machine_is_sunfire())
-	{
-			gpio_request(TEGRA_GPIO_PT4, "S2 WDI");
-			gpio_direction_output(TEGRA_GPIO_PT4, 1);
-			gpio_set_value(TEGRA_GPIO_PT4, 0);
-			cpcap_set_wdigate(0);
+		/* Olympus P1 */
+		gpio_request(TEGRA_GPIO_PT4, "P1 WDI");
+		gpio_direction_output(TEGRA_GPIO_PT4, 1);
+		gpio_set_value(TEGRA_GPIO_PT4, 0);
 	}
 	else
 	{
-		printk(KERN_ERR "Could not poweroff.  Unkown hardware revision: 0x%x\n", system_rev);
+		/* Olympus Mortable, P0, P2 and later */
+		gpio_request(TEGRA_GPIO_PV7, "P2 WDI");
+		gpio_direction_output(TEGRA_GPIO_PV7, 1);
+		gpio_set_value(TEGRA_GPIO_PV7, 0);
 	}
 
 	mdelay(500);
@@ -132,66 +87,18 @@ void mot_system_power_off(void)
 	tegra_machine_restart(0,"");
 }
 
-static int is_daytona_ge_p0(struct cpcap_device *cpcap)
-{
-	if (machine_is_tegra_daytona())
-		return 1;
-	return 0;
-}
-
-static int is_etna_ge_p0(struct cpcap_device *cpcap)
-{
-	if (machine_is_etna())
-		return 1;
-	return 0;
-}
-
-static int is_etna_ge_p3b(struct cpcap_device *cpcap)
-{
-	if (machine_is_etna()) {
-		if (HWREV_TYPE_IS_FINAL(system_rev) ||
-		    (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		     (HWREV_REV(system_rev) >= HWREV_REV_3B))) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-static int is_etna_ge_4fb(struct cpcap_device *cpcap)
-{
-	if (machine_is_etna()) {
-		if (HWREV_TYPE_IS_FINAL(system_rev) ||
-		    (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		     (HWREV_REV(system_rev) >= HWREV_REV_4FB)))
-			return 1;
-	}
-	return 0;
-
-}
 static int is_olympus_ge_p0(struct cpcap_device *cpcap)
 {
-	if (machine_is_olympus())
-		return 1;
-	return 0;
+	return 1;
 }
 
 static int is_olympus_ge_p3(struct cpcap_device *cpcap)
 {
-	if (machine_is_olympus()) {
-		if (HWREV_TYPE_IS_FINAL(system_rev) ||
-			(HWREV_TYPE_IS_PORTABLE(system_rev) &&
-			 (HWREV_REV(system_rev) >= HWREV_REV_3))) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-int is_sunfire_ge_p0(struct cpcap_device *cpcap)
-{
-	if (machine_is_sunfire())
+	if (HWREV_TYPE_IS_FINAL(system_rev) ||
+		(HWREV_TYPE_IS_PORTABLE(system_rev) &&
+		 (HWREV_REV(system_rev) >= HWREV_REV_3))) {
 		return 1;
+	}
 	return 0;
 }
 
@@ -248,15 +155,15 @@ struct cpcap_spi_init_data tegra_cpcap_spi_init[] = {
 	{CPCAP_REG_VRF2C,     0x0000, NULL             },
 	{CPCAP_REG_VRFREFC,   0x0000, NULL             },
 	/* Set VWLAN1 to off */
-	{CPCAP_REG_VWLAN1C,   0x0000, is_daytona_ge_p0 },
-	{CPCAP_REG_VWLAN1C,   0x0000, is_etna_ge_p3b   },
+	{CPCAP_REG_VWLAN1C,   0x0000, NULL             },
+	{CPCAP_REG_VWLAN1C,   0x0000, NULL             },
 	{CPCAP_REG_VWLAN1C,   0x0000, is_olympus_ge_p3 },
-	{CPCAP_REG_VWLAN1C,   0x0000, is_sunfire_ge_p0 },
+	{CPCAP_REG_VWLAN1C,   0x0000, NULL             },
 	/* Set VWLAN1 to AMS/AMS 1.8v */
 	{CPCAP_REG_VWLAN1C,   0x0005, NULL             },
 	/* Set VWLAN2 to On/LP 3.3v. */
 	{CPCAP_REG_VWLAN2C,   0x0089, is_olympus_ge_p3 },
-	{CPCAP_REG_VWLAN2C,   0x0089, is_sunfire_ge_p0 },
+	{CPCAP_REG_VWLAN2C,   0x0089, NULL             },
 	/* Set VWLAN2 to On/On 3.3v */
 	{CPCAP_REG_VWLAN2C,   0x008d, NULL             },
 	/* Set VSIMCARD to AMS/Off 2.9v. */
@@ -306,7 +213,7 @@ struct cpcap_leds tegra_cpcap_leds = {
 	.rgb_led = {
 		.rgb_on = 0x0053,
 		.regulator = "sw5",  /* set to NULL below for products with RGB LED on B+ */
-		.regulator_macro_controlled = false, /* Oly, sunfire and older etna set this true below */
+		.regulator_macro_controlled = false,
 	},
 };
 
@@ -335,13 +242,10 @@ struct cpcap_mode_value *cpcap_regulator_mode_values[] = {
 		{ 0x4909, NULL             },
 	},
 	[CPCAP_SW5] = (struct cpcap_mode_value []) {
-		{ 0x0020, is_etna_ge_4fb   },
-		{ CPCAP_REG_OFF_MODE_SEC | 0x0020, is_etna_ge_p0    },
-		/* All versions of olympus and sunfire support shutting down SW5
-		   when binking the message LED.  Set SW5 to On/Off Secondary
-		   control when off. */
+		{ 0x0020, NULL             },
+		{ CPCAP_REG_OFF_MODE_SEC | 0x0020, NULL             },
 		{ CPCAP_REG_OFF_MODE_SEC | 0x0020, is_olympus_ge_p0 },
-		{ CPCAP_REG_OFF_MODE_SEC | 0x0020, is_sunfire_ge_p0 },
+		{ CPCAP_REG_OFF_MODE_SEC | 0x0020, NULL             },
 		/* On/Off */
 		{ 0x0020, NULL             },
 	},
@@ -391,17 +295,17 @@ struct cpcap_mode_value *cpcap_regulator_mode_values[] = {
 	},
 	[CPCAP_VWLAN1] = (struct cpcap_mode_value []) {
 		/* Off/Off */
-		{0x0000, is_daytona_ge_p0 },
-		{0x0000, is_etna_ge_p3b   },
+		{0x0000, NULL             },
+		{0x0000, NULL             },
 		{0x0000, is_olympus_ge_p3 },
-		{0x0000, is_sunfire_ge_p0 },
+		{0x0000, NULL             },
 		/* AMS/AMS. */
 		{0x0005, NULL             },
 	},
 	[CPCAP_VWLAN2] = (struct cpcap_mode_value []) {
 		/* On/LP 3.3v Secondary Standby (external pass) */
 		{0x0009, is_olympus_ge_p3 },
-		{0x0009, is_sunfire_ge_p0 },
+		{0x0009, NULL             },
 		/* On/On 3.3v (external pass) */
 		{0x000D, NULL             },
 	},
@@ -482,7 +386,7 @@ struct cpcap_mode_value *cpcap_regulator_off_mode_values[] = {
 	[CPCAP_VWLAN2] = (struct cpcap_mode_value []) {
 		/* Turn off only once sec standby is entered. */
 		{0x0004, is_olympus_ge_p3 },
-		{0x0004, is_sunfire_ge_p0 },
+		{0x0004, NULL             },
 		{0x0000, NULL             },
 	},
 	[CPCAP_VSIM] = (struct cpcap_mode_value []) {
@@ -1026,13 +930,7 @@ void mot_setup_power(void)
 
 	/* CPCAP standby lines connected to CPCAP GPIOs on Etna P1B & Olympus P2 */
 	if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-	     (machine_is_etna() &&
-	      HWREV_TYPE_IS_PORTABLE(system_rev) &&
-	       (HWREV_REV(system_rev)  >= HWREV_REV_1B))  ||
-	     (machine_is_olympus() &&
-	       HWREV_TYPE_IS_PORTABLE(system_rev) &&
-	       (HWREV_REV(system_rev)  >= HWREV_REV_2)) ||
-		  machine_is_tegra_daytona() || machine_is_sunfire()) {
+	     HWREV_TYPE_IS_PORTABLE(system_rev) && (HWREV_REV(system_rev)  >= HWREV_REV_2)) {
 		tegra_cpcap_data.hwcfg[1] |= CPCAP_HWCFG1_STBY_GPIO;
 	}
 
@@ -1040,100 +938,21 @@ void mot_setup_power(void)
 	 * 1. VWLAN2 is  shutdown in standby by the CPCAP uC.
 	 * 2. VWLAN1 is shutdown all of the time.
 	 */
-	if (machine_is_olympus()) {
-		if (HWREV_TYPE_IS_FINAL(system_rev) ||
-			(HWREV_TYPE_IS_PORTABLE(system_rev) &&
-			 (HWREV_REV(system_rev) >= HWREV_REV_3))) {
-			pr_info("Detected P3 Olympus hardware.\n");
-			tegra_cpcap_data.hwcfg[1] |= CPCAP_HWCFG1_SEC_STBY_VWLAN2;
-			tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
-			cpcap_regulator[CPCAP_VWLAN2].constraints.always_on = 0;
-		} else {
-			/* Currently only Olympus P3 or greater can handle turning off the
-			   external SD card. */
-			fixed_sdio_config.enabled_at_boot = 1;
-		}
-		/* Indicate the macro controls SW5. */
-		tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
-	}
-
-	/* For Etna the following is done:
-	 * 1. VWLAN1 is shutdown all the time for P3B+
-	 * 2. External SDIO can turn off on P2+ and S3+
-	 * 3. SW5 is enabled in the blink macro for <P4FB and brassboard
-	 * 4. regulator control for button LED is removed for P2C+ & S3+ (moved to B+)
-	 * 5. regulator control for RGB LED is removed for P4FB+ (moved to B+)
-	 */
-	else if (machine_is_etna()) {
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_3B))) {
-			tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
-		}
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_2)) ||
-		     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_3)) ){
-			fixed_sdio_config.enabled_at_boot = 0;
-		} else {
-			fixed_sdio_config.enabled_at_boot = 1;
-		}
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_2C)) ||
-		     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_3)) ) {
-			tegra_cpcap_leds.button_led.regulator = NULL;
-		}
-
-		if ( HWREV_TYPE_IS_FINAL(system_rev) ||
-		     (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		       (HWREV_REV(system_rev) >= HWREV_REV_4FB)) ) {
-			tegra_cpcap_leds.rgb_led.regulator = NULL;
-		} else {
-			tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
-		}
-	}
-	/* For Daytona the following is done
-	 * 1. VWLAN1 is shutdown all the time
-	 */
-	else if (machine_is_tegra_daytona()) {
-		tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
-	}
-	/* For Sunfire the following is done
-	 * 1. VWLAN1 is shutdown all the time
-	 * 2. VWLAN2 is  shutdown in standby by the CPCAP uC.
-	 * 3. Regulator control for button LED is removed (on B+)
-	 * 4. SW5 is enabled in the blink macro
-	 */
-	else if (machine_is_sunfire()) {
+	if (HWREV_TYPE_IS_FINAL(system_rev) ||
+		(HWREV_TYPE_IS_PORTABLE(system_rev) &&
+		 (HWREV_REV(system_rev) >= HWREV_REV_3))) {
+		pr_info("Detected P3 Olympus hardware.\n");
 		tegra_cpcap_data.hwcfg[1] |= CPCAP_HWCFG1_SEC_STBY_VWLAN2;
 		tegra_cpcap_data.hwcfg[1] &= ~CPCAP_HWCFG1_SEC_STBY_VWLAN1;
 		cpcap_regulator[CPCAP_VWLAN2].constraints.always_on = 0;
-		tegra_cpcap_leds.button_led.regulator = NULL;
-		tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
+	} else {
+		/* Currently only Olympus P3 or greater can handle turning off the
+		   external SD card. */
+		fixed_sdio_config.enabled_at_boot = 1;
 	}
-	else {
-		printk(KERN_ERR "Unkown hardware type encountered: 0x%x\n", machine_arch_type);
-	}
+	/* Indicate the macro controls SW5. */
+	tegra_cpcap_leds.rgb_led.regulator_macro_controlled = true;
 
-	if ((machine_is_etna() &&
-	     (HWREV_TYPE_IS_FINAL(system_rev) ||
-	        (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-		(HWREV_REV(system_rev)  >= HWREV_REV_1)))) ||
-		machine_is_tegra_daytona() || machine_is_sunfire()) {
-		printk(KERN_INFO "%s: updating button backlight for portable\n",
-		       __func__);
-		tegra_cpcap_leds.button_led.button_reg = CPCAP_REG_ADLC;
-		tegra_cpcap_leds.button_led.button_mask = 0x7FF;
-		tegra_cpcap_leds.button_led.button_on = 0x67F3;
-	}
-	if (machine_is_tegra_daytona()) {
-		/* IKDAYTONA-123  reduce current through 4 android hard keys */
-		tegra_cpcap_leds.button_led.button_mask = 0x7FF;
-		tegra_cpcap_leds.button_led.button_on = 0x7F1;
-	}
 	/* For all machine types, disable watchdog when HWREV is debug, brassboard or mortable */
 	if (HWREV_TYPE_IS_DEBUG(system_rev) || HWREV_TYPE_IS_BRASSBOARD(system_rev) ||
 	    HWREV_TYPE_IS_MORTABLE(system_rev) ){

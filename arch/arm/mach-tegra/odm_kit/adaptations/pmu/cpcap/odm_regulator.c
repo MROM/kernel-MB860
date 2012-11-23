@@ -487,21 +487,7 @@ RegulatorCanBeShutdown(
     switch (vddRail) {
         case RegulatorCpcapSupply_WLAN2:
             /* VWLAN2 can only be shutdown for P3 and greater olympus. */
-            if (machine_is_olympus() &&
-                (HWREV_TYPE_IS_FINAL(system_rev) ||
-                 (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-                  (HWREV_REV(system_rev) >= HWREV_REV_3))))
-                return NV_TRUE;
-            /* VWLAN2 can only be shutdown for P3B+ or S3+ on etna. */
-            if (machine_is_etna() &&
-                (HWREV_TYPE_IS_FINAL(system_rev) ||
-                 (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-                  (HWREV_REV(system_rev) >= HWREV_REV_3)) ||
-                 (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-                  (HWREV_REV(system_rev) >= HWREV_REV_3B))))
-                return NV_TRUE;
-            /* VWLAN2 can be shutdown on daytona and sunfire */
-            if (machine_is_tegra_daytona() || machine_is_sunfire())
+            if ( (HWREV_TYPE_IS_FINAL(system_rev) || (HWREV_TYPE_IS_PORTABLE(system_rev) && (HWREV_REV(system_rev) >= HWREV_REV_3))))
                 return NV_TRUE;
 
             return NV_FALSE;
@@ -520,17 +506,7 @@ RemapRail(
     switch (vddRail)
     {
         case RegulatorCpcapSupply_WLAN1:
-            if (machine_is_olympus() &&
-                (HWREV_TYPE_IS_FINAL(system_rev) ||
-                 (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-                  (HWREV_REV(system_rev) >= HWREV_REV_3))))
-                return RegulatorCpcapSupply_SW3;
-            if (machine_is_etna() &&
-                (HWREV_TYPE_IS_FINAL(system_rev) ||
-                 (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-                  (HWREV_REV(system_rev) >= HWREV_REV_3)) ||
-                 (HWREV_TYPE_IS_PORTABLE(system_rev) &&
-                  (HWREV_REV(system_rev) >= HWREV_REV_3B))))
+            if ( (HWREV_TYPE_IS_FINAL(system_rev) || (HWREV_TYPE_IS_PORTABLE(system_rev) && (HWREV_REV(system_rev) >= HWREV_REV_3))))
                 return RegulatorCpcapSupply_SW3;
     }
     return vddRail;
@@ -872,12 +848,6 @@ RegulatorMiscSetup(NvOdmPmuDeviceHandle hDevice)
             {
                 int port = NVODM_PORT('f');
                 int pin  = 6;
-
-                if (machine_is_etna() && HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-                    HWREV_REV(system_rev) == HWREV_REV_1) {
-                    port = NVODM_PORT('d');
-                    pin  = 0;
-                }
 
                 d->vhdmi_gpio = NvOdmGpioAcquirePinHandle(d->gpio_hndl, port, pin);
                 if (d->vhdmi_gpio == NULL) {

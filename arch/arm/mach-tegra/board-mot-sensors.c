@@ -30,9 +30,7 @@
 #define TEGRA_HF_SOUTH_GPIO			TEGRA_GPIO_PS0
 #define TEGRA_HF_KICKSTAND_GPIO		TEGRA_GPIO_PW3
 #define TEGRA_VIBRATOR_GPIO			TEGRA_GPIO_PD0
-#define TEGRA_VIBRATOR_GPIO_ETNA_S1	TEGRA_GPIO_PU4
 #define TEGRA_KXTF9_INT_GPIO		TEGRA_GPIO_PV3
-#define TEGRA_KXTF9_INT_GPIO_ETNA_S1 TEGRA_GPIO_PN4
 #define TEGRA_L3G4200D_IRQ_GPIO		TEGRA_GPIO_PH2
 
 #define TEGRA_AKM8975_RESET_GPIO	TEGRA_GPIO_PK5
@@ -65,14 +63,8 @@ static void tegra_vibrator_exit(void)
 
 static int tegra_vibrator_power_on(void)
 {
-	if (machine_is_sunfire()) {
-		/* Sunfire has different vibrator P/N 59002313001 than Etna) */
-		regulator_set_voltage(tegra_vibrator_regulator,
-			1800000, 1800000);
-	} else {
-		regulator_set_voltage(tegra_vibrator_regulator,
+	regulator_set_voltage(tegra_vibrator_regulator,
 			3000000, 3000000);
-	}
 	return regulator_enable(tegra_vibrator_regulator);
 }
 
@@ -349,39 +341,6 @@ static void __init kxtf9_init(void)
 		of_node_put(node);
 	}
 #endif
-    if (machine_is_tegra_daytona()) {
-        kxtf9_data.gpio = TEGRA_KXTF9_INT_GPIO;
-		kxtf9_data.negate_z = 0;
-		/* Swap x and y */
-		kxtf9_data.axis_map_x = 0;
-		kxtf9_data.axis_map_y = 1;
-		kxtf9_data.negate_y = 0;
-		kxtf9_data.negate_x = 0;
-    }
-	else if (machine_is_etna()) {
-        if (system_rev == 0x1100)
-            kxtf9_data.gpio = TEGRA_KXTF9_INT_GPIO_ETNA_S1;
-		kxtf9_data.negate_z = 1;
-		/* Swap x and y */
-		kxtf9_data.axis_map_x = 1;
-		kxtf9_data.axis_map_y = 0;
-		/* For P2A and above */
-		if (HWREV_TYPE_IS_FINAL(system_rev) ||
-			(HWREV_TYPE_IS_PORTABLE(system_rev) &&
-			HWREV_REV(system_rev) >= HWREV_REV_2)) {
-			kxtf9_data.negate_y = 0;
-			kxtf9_data.negate_x = 0;
-		}
-	}
-	else if (machine_is_sunfire()) {
-		kxtf9_data.negate_z = 1;
-		/* Swap x and y */
-		kxtf9_data.axis_map_x = 1;
-		kxtf9_data.axis_map_y = 0;
-
-		kxtf9_data.negate_y = 0;
-		kxtf9_data.negate_x = 0;
-	}	
 	gpio_request(kxtf9_data.gpio, "kxtf9 accelerometer int");
 	gpio_direction_input(kxtf9_data.gpio);
 //	omap_cfg_reg(AF9_34XX_GPIO22_DOWN);
@@ -478,13 +437,6 @@ static struct platform_device ap20_hall_effect_dock = {
 
 static void tegra_vibrator_init(void)
 {
-        if (machine_is_etna()) {
-            if (system_rev == 0x1100) {
-                printk("VIB: Etna S1 gpio override.\n");
-                tegra_vib_gpio_data.gpio = TEGRA_VIBRATOR_GPIO_ETNA_S1;
-            }
-        }
-
         if( gpio_request(tegra_vib_gpio_data.gpio, "vib_en") < 0) return;
         gpio_direction_output(tegra_vib_gpio_data.gpio, 0);
 //	omap_cfg_reg(Y4_34XX_GPIO181);
@@ -523,105 +475,14 @@ struct isl29030_platform_data isl29030_als_ir_data_Olympus = {
 	.gpio_intr = PROX_INT_GPIO,
 };
 
-struct isl29030_platform_data isl29030_als_ir_data_Etna = {
-/*
-	NOTE: Original values
-	.configure = 0x6c,
-	.interrupt_cntrl = 0x40,
-	.prox_lower_threshold = 0x1e,
-	.prox_higher_threshold = 0x32,
-	.als_ir_low_threshold = 0x00,
-	.als_ir_high_low_threshold = 0x00,
-	.als_ir_high_threshold = 0x45,
-	.lens_percent_t = 100,
-*/
-	.init = NULL,
-	.exit = NULL,
-	.power_on = NULL,
-	.power_off = NULL,
-	.configure = 0x66,
-	.interrupt_cntrl = 0x20,
-	.prox_lower_threshold = 0x0f,
-	.prox_higher_threshold = 0x14,
-	.crosstalk_vs_covered_threshold = 0x82,
-	.default_prox_noise_floor = 0xAA,
-	.num_samples_for_noise_floor = 0x05,
-	.lens_percent_t = 3,
-	.irq = 0,
-	.getIrqStatus = isl29030_getIrqStatus,
-	.gpio_intr = PROX_INT_GPIO,
-};
-
-struct isl29030_platform_data isl29030_als_ir_data_Daytona = {
-/*
-	NOTE: Original values
-	.configure = 0x6c,
-	.interrupt_cntrl = 0x40,
-	.prox_lower_threshold = 0x1e,
-	.prox_higher_threshold = 0x32,
-    .als_ir_low_threshold = 0x00,
-    .als_ir_high_low_threshold = 0x00,
-	.als_ir_high_threshold = 0x45,
-	.lens_percent_t = 100,
-*/
-	.init = NULL,
-	.exit = NULL,
-	.power_on = NULL,
-	.power_off = NULL,
-	.configure = 0x66,
-	.interrupt_cntrl = 0x20,
-	.prox_lower_threshold = 0x0a,
-	.prox_higher_threshold = 0x14,
-	.crosstalk_vs_covered_threshold = 0x46,
-	.default_prox_noise_floor = 0x3c,
-	.num_samples_for_noise_floor = 0x05,
-	.lens_percent_t = 3,
-	.irq = 0,
-	.getIrqStatus = isl29030_getIrqStatus,
-	.gpio_intr = PROX_INT_GPIO,
-};
-
-struct isl29030_platform_data isl29030_als_ir_data_Sunfire = {
-	.init = NULL,
-	.exit = NULL,
-	.power_on = NULL,
-	.power_off = NULL,
-	.configure = 0x66,
-	.interrupt_cntrl = 0x20,
-	.prox_lower_threshold = 0x0f,
-	.prox_higher_threshold = 0x14,
-	.crosstalk_vs_covered_threshold = 0x96,
-	.default_prox_noise_floor = 0x96,
-	.num_samples_for_noise_floor = 0x05,
-	.lens_percent_t = 7,
-	.irq = 0,
-	.getIrqStatus = isl29030_getIrqStatus,
-	.gpio_intr = PROX_INT_GPIO,
-};
-
 static struct platform_device isl29030_als_ir = {
 	.name	= LD_ISL29030_NAME,
 	.id	= -1,
 };
 static void __init isl29030_init(void)
 {
-	if (machine_is_olympus()) {
-		isl29030_als_ir_data_Olympus.irq = gpio_to_irq(PROX_INT_GPIO);
-		isl29030_als_ir.dev.platform_data = &(isl29030_als_ir_data_Olympus);
-	}
-	if (machine_is_etna()) {
-		isl29030_als_ir_data_Etna.irq = gpio_to_irq(PROX_INT_GPIO);
-		isl29030_als_ir.dev.platform_data = &(isl29030_als_ir_data_Etna);
-	}
-		if (machine_is_sunfire()) {
-		isl29030_als_ir_data_Sunfire.irq = gpio_to_irq(PROX_INT_GPIO);
-		isl29030_als_ir.dev.platform_data = &(isl29030_als_ir_data_Sunfire);
-	}
-	
-        if (machine_is_tegra_daytona()) {
-                isl29030_als_ir_data_Daytona.irq = gpio_to_irq(PROX_INT_GPIO);
-                isl29030_als_ir.dev.platform_data = &(isl29030_als_ir_data_Daytona);
-        }
+	isl29030_als_ir_data_Olympus.irq = gpio_to_irq(PROX_INT_GPIO);
+	isl29030_als_ir.dev.platform_data = &(isl29030_als_ir_data_Olympus);
 	gpio_request(PROX_INT_GPIO, "isl29030_proximity_int");
 	gpio_direction_input(PROX_INT_GPIO);
 }
@@ -662,38 +523,7 @@ static struct spi_board_info aes1750_spi_device __initdata = {
     .irq = 0,
 };
 
-/* Hall effect */
-static void tegra_hall_effect_init(void)
-{
-	if ((machine_is_sunfire())) {
-		pr_info("HALL: Sunfire kickstand gpio init.\n");
-		gpio_request(TEGRA_HF_KICKSTAND_GPIO, "tegra kickstand");
-		gpio_direction_input(TEGRA_HF_KICKSTAND_GPIO);
-	} else {
-		gpio_request(TEGRA_HF_NORTH_GPIO, "tegra dock north");
-		gpio_direction_input(TEGRA_HF_NORTH_GPIO);
-/*		omap_cfg_reg(AG25_34XX_GPIO10); */
-
-		gpio_request(TEGRA_HF_SOUTH_GPIO, "tegra dock south");
-		gpio_direction_input(TEGRA_HF_SOUTH_GPIO);
-/*		omap_cfg_reg(B26_34XX_GPIO111); */
-	}
-}
-
 static struct regulator *tegra_l3g4200d_regulator=NULL;
-static int tegra_l3g4200d_init(void)
-{
-        struct regulator *reg;
-
-        gpio_request(TEGRA_L3G4200D_IRQ_GPIO, "l3g4200d_irq");
-        gpio_direction_input(TEGRA_L3G4200D_IRQ_GPIO);
-
-        reg = regulator_get(NULL, "vhvio");
-        if (IS_ERR(reg))
-                return PTR_ERR(reg);
-        tegra_l3g4200d_regulator = reg;
-        return 0;
-}
 
 static void tegra_l3g4200d_exit(void)
 {
@@ -753,24 +583,14 @@ void __init mot_sensors_init(void)
 {
 	kxtf9_init();
 	tegra_akm8975_init();
-	if (machine_is_tegra_daytona() ||
-		machine_is_sunfire())
-		tegra_hall_effect_init();
 
 	tegra_vibrator_init();
 	if(!(bi_powerup_reason() & PWRUP_BAREBOARD)) {
 		isl29030_init();
 	}
-	if (machine_is_etna() ||
-		machine_is_tegra_daytona() ||
-		machine_is_sunfire()) {
-			tegra_l3g4200d_init();
-	}
 
 	platform_add_devices(tegra_sensors, ARRAY_SIZE(tegra_sensors));
 
-    if (machine_is_olympus()) {
         aes1750_spi_device.irq = gpio_to_irq(aes1750_interrupt);
         spi_register_board_info(&aes1750_spi_device,sizeof(aes1750_spi_device));
-    }
 }

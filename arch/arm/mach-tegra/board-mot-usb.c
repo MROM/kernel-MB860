@@ -239,10 +239,6 @@ static struct platform_device acm_device = {
 static char *usb_serial_num;
 
 static char *olympus_dev = "MB860";
-static char *etna_dev = "XT865";
-static char *daytona_dev = "MB870";
-static char *sunfire_dev = "MB855";
-static char *default_dev = "Motorola AP20";
 
 static int __init mot_usb_serial_num_setup(char *options)
 {
@@ -290,27 +286,9 @@ void mot_setup_gadget(void)
 	else
 		andusb_plat.serial_number = kstrdup(serial, GFP_KERNEL);
 
-	if (machine_is_olympus()) {
-		andusb_plat.product_name = olympus_dev;
-		andusb_plat_bp.product_name = olympus_dev;
-		tegra_usb_fsg_platform.product = olympus_dev;
-	} else if (machine_is_etna()) {
-		andusb_plat.product_name = etna_dev;
-		andusb_plat_bp.product_name = etna_dev;
-		tegra_usb_fsg_platform.product = etna_dev;
-	} else if (machine_is_tegra_daytona()) {
-		andusb_plat.product_name = daytona_dev;
-		andusb_plat_bp.product_name = daytona_dev;
-		tegra_usb_fsg_platform.product = daytona_dev;
-	} else if (machine_is_sunfire()) {
-		andusb_plat.product_name = sunfire_dev;
-		andusb_plat_bp.product_name = sunfire_dev;
-		tegra_usb_fsg_platform.product = sunfire_dev;
-	} else {
-		andusb_plat.product_name = default_dev;
-		andusb_plat_bp.product_name = default_dev;
-		tegra_usb_fsg_platform.product = default_dev;
-	}
+	andusb_plat.product_name = olympus_dev;
+	andusb_plat_bp.product_name = olympus_dev;
+	tegra_usb_fsg_platform.product = olympus_dev;
 
 	if (!strncmp(boot_mode, "bp-tools", BOOT_MODE_MAX_LEN)) {
 		tegra_android_device.dev.platform_data = &andusb_plat_bp;

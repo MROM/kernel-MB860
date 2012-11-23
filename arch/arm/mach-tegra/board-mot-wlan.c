@@ -111,48 +111,6 @@ static struct wifi_mem_prealloc_struct
 	{"MX", "XY", 3}
  };
 
-/* Sunfire uses Q1/5 for US and Canada*/
- static struct cntry_locales_custom sunfire_locales_table[] = {
-	{"",   "XY", 4},/* universal if Country code is unknown or empty */
-	{"US", "Q1", 5},/* input ISO "US" to : US regrev 69 */
-	{"CA", "Q1", 5},/* input ISO "CA" to : US regrev 69 */
-	{"EU", "EU", 5},/* European union countries */
-	{"AT", "EU", 5},
-	{"BE", "EU", 5},
-	{"BG", "EU", 5},
-	{"CY", "EU", 5},
-	{"CZ", "EU", 5},
-	{"DK", "EU", 5},
-	{"EE", "EU", 5},
-	{"FI", "EU", 5},
-	{"FR", "EU", 5},
-	{"DE", "EU", 5},
-	{"GR", "EU", 5},
-	{"HU", "EU", 5},
-	{"IE", "EU", 5},
-	{"IT", "EU", 5},
-	{"LV", "EU", 5},
-	{"LI", "EU", 5},
-	{"LT", "EU", 5},
-	{"LU", "EU", 5},
-	{"MT", "EU", 5},
-	{"NL", "EU", 5},
-	{"PL", "EU", 5},
-	{"PT", "EU", 5},
-	{"RO", "EU", 5},
-	{"SK", "EU", 5},
-	{"SI", "EU", 5},
-	{"ES", "EU", 5},
-	{"SE", "EU", 5},
-	{"GB", "EU", 5}, /* input ISO "GB" to : EU regrev 05 */
-	{"KR", "XY", 3},
-	{"AU", "XY", 3},
-	{"CN", "XY", 3}, /* input ISO "CN" to : XY regrev 03 */
-	{"TW", "XY", 3},
-	{"AR", "XY", 3},
-	{"MX", "XY", 3}
- };
-
 static struct cntry_locales_custom *mot_locales_table_ptr;
 static int mot_locales_table_size;
 
@@ -316,13 +274,8 @@ static struct resource mot_wifi_resources[] = {
 	pr_debug("%s: start\n", __func__);
 	mot_wlan_gpio_init();
 	mot_init_wifi_mem();
-	if (machine_is_sunfire()) {
-		mot_locales_table_ptr = sunfire_locales_table;
-		mot_locales_table_size = ARRAY_SIZE(sunfire_locales_table);
-	} else {
-		mot_locales_table_ptr = olympus_locales_table;
-		mot_locales_table_size = ARRAY_SIZE(olympus_locales_table);
-	}
+	mot_locales_table_ptr = olympus_locales_table;
+	mot_locales_table_size = ARRAY_SIZE(olympus_locales_table);
 	ret = platform_device_register(&mot_wifi_device);
 	wlan_ctrl_ready = (ret == 0);
 	return ret;

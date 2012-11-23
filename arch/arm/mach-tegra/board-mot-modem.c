@@ -179,16 +179,14 @@ static int __init mot_mdm_ctrl_init(void)
 	mdm_ctrl_platform_data.on_bp_shutdown = mot_on_bp_shutdown;
 	mdm_ctrl_platform_data.on_bp_change = mot_on_bp_change;
 
-	if (machine_is_olympus()) {
-		if ((HWREV_TYPE_IS_FINAL(system_rev) ||
-				(HWREV_TYPE_IS_PORTABLE(system_rev) &&
-				(HWREV_REV(system_rev) >= HWREV_REV_3))))
-			mdm_ctrl_platform_data.usb_regulator =
-						mdm_ctrl_usb_regulator;
-		else
-			/* BP_RESOUT floats on P2 and older Olympus hardware */
-			mdm_ctrl_platform_data.bp_resout_quirk = true;
-	}
+	if ((HWREV_TYPE_IS_FINAL(system_rev) ||
+			(HWREV_TYPE_IS_PORTABLE(system_rev) &&
+			(HWREV_REV(system_rev) >= HWREV_REV_3))))
+		mdm_ctrl_platform_data.usb_regulator =
+					mdm_ctrl_usb_regulator;
+	else
+		/* BP_RESOUT floats on P2 and older Olympus hardware */
+		mdm_ctrl_platform_data.bp_resout_quirk = true;
 
 	mdm_ctrl_platform_data.ap_status0_gpio = AP_STATUS0_GPIO;
 	mdm_ctrl_platform_data.ap_status1_gpio = AP_STATUS1_GPIO;
@@ -332,79 +330,25 @@ static int __init mot_setup_mdm6600_usb_ipc(int irq)
 
 #define WRIGLEY_HOST_WAKE_GPIO TEGRA_GPIO_PC7
 
-static struct wake_lock wrigley_host_wakelock;
-
-static irqreturn_t wrigley_host_wake_irq_handler(int irq, void *ptr)
-{
-	/* Keep us awake for a bit until USB gets going */
-	wake_lock_timeout(&wrigley_host_wakelock, (HZ * 1));
-	return IRQ_HANDLED;
-}
-
-static void __init mot_setup_wrigley_host_wake(void)
-{
-	int irq, err;
-
-	wake_lock_init(&wrigley_host_wakelock, WAKE_LOCK_SUSPEND,
-		"WAN Host Wakelock");
-
-	gpio_request(WRIGLEY_HOST_WAKE_GPIO, "WAN Wake Host");
-	gpio_direction_input(WRIGLEY_HOST_WAKE_GPIO);
-	irq = gpio_to_irq(WRIGLEY_HOST_WAKE_GPIO);
-	printk(KERN_INFO "%s: irq: %d, value: %d\n", __func__, irq,
-				gpio_get_value(WRIGLEY_HOST_WAKE_GPIO));
-
-	set_irq_type(irq, IRQ_TYPE_EDGE_FALLING);
-	err = request_irq(irq, wrigley_host_wake_irq_handler,
-			IRQF_DISABLED, "wan_wake_host", NULL);
-	if (err < 0) {
-		printk(KERN_ERR "%s: failed to register WAN BP AP WAKE "
-		       "interrupt handler, errno = %d\n", __func__, -err);
-	}
-}
-
-
 int __init mot_modem_init(void)
 {
 	char bp_ctrl_bus[40] = "UART";
 	char bp_data_bus[20] = "only";
 
-	if ((machine_is_olympus() &&
-	     !(HWREV_TYPE_IS_MORTABLE(system_rev) &&
-	       HWREV_REV(system_rev) <= HWREV_REV_1)) ||
-	    (machine_is_etna() &&
-	     ((HWREV_TYPE_IS_PORTABLE(system_rev) &&
-	       HWREV_REV(system_rev) >= HWREV_REV_2C) ||
-	      (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-	       HWREV_REV(system_rev) >= HWREV_REV_3))) ||
-	    machine_is_tegra_daytona() ||
-	    machine_is_sunfire()) {
+	if ( !(HWREV_TYPE_IS_MORTABLE(system_rev) && HWREV_REV(system_rev) <= HWREV_REV_1) ) {
 		strcat(bp_ctrl_bus, " (with mdm_ctrl)");
 		mot_mdm_ctrl_init();
 		mot_mdm6600_agent_init();
 	} else
 		strcat(bp_ctrl_bus, " (NO mdm_ctrl)");
 
-	if (machine_is_olympus() || machine_is_tegra_daytona() ||
-		machine_is_sunfire()) {
-		strcpy(bp_data_bus, "and SPI");
-		mot_setup_mdm6600_spi_ipc();
-		mot_setup_mdm6600_usb_ipc(0);
-	} else if (machine_is_etna()) {
-		strcpy(bp_data_bus, "and USB");
-		mot_setup_mdm6600_usb_ipc(MDM6600_HOST_WAKE_GPIO);
-	}
+	strcpy(bp_data_bus, "and SPI");
+	mot_setup_mdm6600_spi_ipc();
+	mot_setup_mdm6600_usb_ipc(0);
 
 	/* All hardware at least has MDM6x00 at the moment. */
 	printk(KERN_INFO "%s: MDM6x00 on %s %s\n", __func__,
 				bp_ctrl_bus, bp_data_bus);
-
-	if (machine_is_etna() &&
-	    ((HWREV_TYPE_IS_PORTABLE(system_rev) &&
-	      HWREV_REV(system_rev) >= HWREV_REV_2C) ||
-	     (HWREV_TYPE_IS_BRASSBOARD(system_rev) &&
-	      HWREV_REV(system_rev) >= HWREV_REV_3)))
-		mot_setup_wrigley_host_wake();
 
 	return 0;
 }

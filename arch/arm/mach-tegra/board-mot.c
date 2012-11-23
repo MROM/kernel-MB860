@@ -289,191 +289,6 @@ static char oly_unused_pins_p1[] = {
         TEGRA_GPIO_PD1,
 };
 
-static char daytona_unused_pins_p1[] = {
-        TEGRA_GPIO_PN5,
-        TEGRA_GPIO_PN4,
-        TEGRA_GPIO_PN6,
-        TEGRA_GPIO_PW1,
-        TEGRA_GPIO_PO1,
-        TEGRA_GPIO_PO2,
-        TEGRA_GPIO_PO3,
-        TEGRA_GPIO_PO4,
-        TEGRA_GPIO_PO5,
-        TEGRA_GPIO_PO6,
-        TEGRA_GPIO_PO7,
-        TEGRA_GPIO_PO0,
-        TEGRA_GPIO_PY0,
-        TEGRA_GPIO_PY1,
-        TEGRA_GPIO_PY2,
-        TEGRA_GPIO_PY3,
-        TEGRA_GPIO_PB2,
-        TEGRA_GPIO_PC1,
-        TEGRA_GPIO_PC6,
-        TEGRA_GPIO_PZ4,
-        TEGRA_GPIO_PW0,
-        TEGRA_GPIO_PZ3,
-        TEGRA_GPIO_PB3,
-        TEGRA_GPIO_PJ3,
-        TEGRA_GPIO_PE6,
-        TEGRA_GPIO_PE7,
-        TEGRA_GPIO_PF0,
-        TEGRA_GPIO_PM2,
-        TEGRA_GPIO_PM3,
-        TEGRA_GPIO_PM5,
-        TEGRA_GPIO_PM6,
-        TEGRA_GPIO_PM7,
-        TEGRA_GPIO_PT4,
-        TEGRA_GPIO_PL2,
-        TEGRA_GPIO_PL4,
-        TEGRA_GPIO_PL5,
-        TEGRA_GPIO_PL6,
-        TEGRA_GPIO_PL7,
-        TEGRA_GPIO_PT2,
-        TEGRA_GPIO_PD6,
-        TEGRA_GPIO_PD7,
-        TEGRA_GPIO_PBB5,
-        TEGRA_GPIO_PR4,
-        TEGRA_GPIO_PR5,
-        TEGRA_GPIO_PR6,
-        TEGRA_GPIO_PR7,
-        TEGRA_GPIO_PS1,
-        TEGRA_GPIO_PQ3,
-        TEGRA_GPIO_PQ4,
-        TEGRA_GPIO_PQ5,
-        TEGRA_GPIO_PBB0,
-        TEGRA_GPIO_PZ5,
-        TEGRA_GPIO_PK5,
-        TEGRA_GPIO_PK6,
-        TEGRA_GPIO_PW5,
-	TEGRA_GPIO_PW3,
-        TEGRA_GPIO_PD3,
-        TEGRA_GPIO_PI7,
-        TEGRA_GPIO_PJ0,
-        TEGRA_GPIO_PJ2,
-        TEGRA_GPIO_PK3,
-        TEGRA_GPIO_PK4,
-        TEGRA_GPIO_PK2,
-        TEGRA_GPIO_PG0,
-        TEGRA_GPIO_PG1,
-        TEGRA_GPIO_PG2,
-        TEGRA_GPIO_PG3,
-        TEGRA_GPIO_PG4,
-        TEGRA_GPIO_PG5,
-        TEGRA_GPIO_PG6,
-        TEGRA_GPIO_PG7,
-        TEGRA_GPIO_PH0,
-        TEGRA_GPIO_PH1,
-        TEGRA_GPIO_PH2,
-        TEGRA_GPIO_PH3,
-        TEGRA_GPIO_PI0,
-        TEGRA_GPIO_PI4,
-        TEGRA_GPIO_PT5,
-        TEGRA_GPIO_PT6,
-        TEGRA_GPIO_PC7,
-};
-
-static char etna_unused_pins_p2a[] = {
-	TEGRA_GPIO_PN5,
-	TEGRA_GPIO_PN4,
-	TEGRA_GPIO_PN6,
-	TEGRA_GPIO_PZ4,
-	TEGRA_GPIO_PV7,
-	TEGRA_GPIO_PW1,
-	TEGRA_GPIO_PB3,
-	TEGRA_GPIO_PJ3,
-	TEGRA_GPIO_PE4,
-	TEGRA_GPIO_PF2,
-	TEGRA_GPIO_PM4,
-	TEGRA_GPIO_PM6,
-	TEGRA_GPIO_PM7,
-	TEGRA_GPIO_PL3,
-	TEGRA_GPIO_PD7,
-	TEGRA_GPIO_PR2,
-	TEGRA_GPIO_PR3,
-	TEGRA_GPIO_PR4,
-	TEGRA_GPIO_PR5,
-	TEGRA_GPIO_PR6,
-	TEGRA_GPIO_PR7,
-	TEGRA_GPIO_PS1,
-	TEGRA_GPIO_PQ2,
-	TEGRA_GPIO_PQ3,
-	TEGRA_GPIO_PQ4,
-	TEGRA_GPIO_PQ5,
-	TEGRA_GPIO_PBB0,
-	TEGRA_GPIO_PZ5,
-	TEGRA_GPIO_PK5,
-	TEGRA_GPIO_PK6,
-	TEGRA_GPIO_PX4,
-	TEGRA_GPIO_PX5,
-	TEGRA_GPIO_PX6,
-	TEGRA_GPIO_PX7,
-	TEGRA_GPIO_PW3,
-	TEGRA_GPIO_PD1,
-	TEGRA_GPIO_PD3,
-	TEGRA_GPIO_PI7,
-	TEGRA_GPIO_PJ2,
-	TEGRA_GPIO_PK3,
-	TEGRA_GPIO_PK4,
-	TEGRA_GPIO_PK2,
-	TEGRA_GPIO_PG3,
-	TEGRA_GPIO_PG4,
-	TEGRA_GPIO_PG5,
-	TEGRA_GPIO_PG6,
-	TEGRA_GPIO_PG7,
-	TEGRA_GPIO_PH0,
-	TEGRA_GPIO_PH1,
-	TEGRA_GPIO_PI4,
-	TEGRA_GPIO_PT5,
-	TEGRA_GPIO_PT6,
-};
-
-static char etna_unused_pins_p2c[] = {
-        TEGRA_GPIO_PN5,
-        TEGRA_GPIO_PN4,
-        TEGRA_GPIO_PN6,
-        TEGRA_GPIO_PV7,
-        TEGRA_GPIO_PW1,
-        TEGRA_GPIO_PB3,
-        TEGRA_GPIO_PJ4,
-        TEGRA_GPIO_PE5,
-        TEGRA_GPIO_PE7,
-        TEGRA_GPIO_PM4,
-        TEGRA_GPIO_PD7,
-        TEGRA_GPIO_PR2,
-        TEGRA_GPIO_PR3,
-        TEGRA_GPIO_PR4,
-        TEGRA_GPIO_PR5,
-        TEGRA_GPIO_PR6,
-        TEGRA_GPIO_PR7,
-        TEGRA_GPIO_PS1,
-        TEGRA_GPIO_PS2,
-        TEGRA_GPIO_PQ2,
-        TEGRA_GPIO_PQ3,
-        TEGRA_GPIO_PQ4,
-        TEGRA_GPIO_PQ5,
-        TEGRA_GPIO_PBB0,
-        TEGRA_GPIO_PZ5,
-        TEGRA_GPIO_PK5,
-        TEGRA_GPIO_PK6,
-        TEGRA_GPIO_PD3,
-        TEGRA_GPIO_PI7,
-        TEGRA_GPIO_PJ2,
-        TEGRA_GPIO_PK3,
-        TEGRA_GPIO_PK4,
-        TEGRA_GPIO_PG3,
-        TEGRA_GPIO_PG4,
-        TEGRA_GPIO_PG5,
-        TEGRA_GPIO_PG6,
-        TEGRA_GPIO_PG7,
-        TEGRA_GPIO_PH0,
-        TEGRA_GPIO_PH1,
-        TEGRA_GPIO_PH2,
-        TEGRA_GPIO_PH3,
-        TEGRA_GPIO_PI4,
-        TEGRA_GPIO_PT5,
-        TEGRA_GPIO_PT6,
-};
-
 extern void __init tegra_setup_nvodm(bool standard_i2c, bool standard_spi);
 extern void __init tegra_register_socdev(void);
 
@@ -503,14 +318,6 @@ static struct i2c_board_info tegra_i2c_bus0_board_info[] = {
 	},
 #endif
 };
-static struct i2c_board_info tegra_i2c_bus2_board_info[] = {
-	{
-	/* only exists on Etna P2+; probe will gracefully fail if HW doesn't exist */
-		I2C_BOARD_INFO(L3G4200D_NAME, 0x68),
-		.platform_data = &tegra_gyro_pdata,
-		.irq = GPIO_TO_IRQ(TEGRA_GPIO_PH2),
-	},
-};
 static struct i2c_board_info tegra_i2c_bus3_board_info[] = {
 	{
 		I2C_BOARD_INFO("akm8975", 0x0C),
@@ -521,30 +328,6 @@ static struct i2c_board_info tegra_i2c_bus3_board_info[] = {
 		I2C_BOARD_INFO("kxtf9", 0x0F),
 		.platform_data = &kxtf9_data,
 	},
-#if defined(CONFIG_TEGRA_ODM_ETNA)
-	{
-		/*  ISL 29030 (prox/ALS) driver */
-		I2C_BOARD_INFO(LD_ISL29030_NAME, 0x44),
-		.platform_data = &isl29030_als_ir_data_Etna,
-		.irq = 180,
-	},
-#endif
-#if defined(CONFIG_TEGRA_ODM_DAYTONA)
-	{
-		/*  ISL 29030 (prox/ALS) driver */
-		I2C_BOARD_INFO(LD_ISL29030_NAME, 0x44),
-		.platform_data = &isl29030_als_ir_data_Daytona,
-		.irq = 180,
-	},
-#endif
-#if defined(CONFIG_TEGRA_ODM_SUNFIRE)
-	{
-		/*  ISL 29030 (prox/ALS) driver */
-		I2C_BOARD_INFO(LD_ISL29030_NAME, 0x44),
-		.platform_data = &isl29030_als_ir_data_Sunfire,
-		.irq = 180,
-	},
-#endif
 };
 
 #if 1
@@ -672,36 +455,10 @@ static void __init tegra_mot_init(void)
 
 	mot_setup_gadget();
 
-	if(machine_is_olympus()) {
-		tegra_uart_platform[UART_IPC_OLYMPUS].uart_ipc = 1;
-		tegra_uart_platform[UART_IPC_OLYMPUS].uart_wake_host = TEGRA_GPIO_PA0;
-		tegra_uart_platform[UART_IPC_OLYMPUS].uart_wake_request = TEGRA_GPIO_PF1;
-		tegra_uart_platform[UART_IPC_OLYMPUS].peer_register = mot_mdm_ctrl_peer_register;
-	}
-	else if(machine_is_etna()) {
-		if (HWREV_TYPE_IS_BRASSBOARD(system_rev)) {
-			/* The modem is dead on S2, which makes the UART angry. */
-			tegra_uart_platform[UART_IPC_ETNA].uart_ipc = 0;
-			tegra_uart_platform[UART_IPC_ETNA].p.irq = ~0;
-		} else {
-			tegra_uart_platform[UART_IPC_ETNA].uart_ipc = 1;
-			tegra_uart_platform[UART_IPC_ETNA].uart_wake_host = TEGRA_GPIO_PA0;
-			tegra_uart_platform[UART_IPC_ETNA].uart_wake_request = TEGRA_GPIO_PF1;
-			tegra_uart_platform[UART_IPC_ETNA].peer_register = mot_mdm_ctrl_peer_register;
-		}
-	}
-	else if(machine_is_tegra_daytona()) {
-		tegra_uart_platform[UART_IPC_DAYTONA].uart_ipc = 1;
-		tegra_uart_platform[UART_IPC_DAYTONA].uart_wake_host = TEGRA_GPIO_PA0;
-		tegra_uart_platform[UART_IPC_DAYTONA].uart_wake_request = TEGRA_GPIO_PF1;
-		tegra_uart_platform[UART_IPC_DAYTONA].peer_register = mot_mdm_ctrl_peer_register;
-	}
-	else if(machine_is_sunfire()) {
-		tegra_uart_platform[UART_IPC_SUNFIRE].uart_ipc = 1;
-		tegra_uart_platform[UART_IPC_SUNFIRE].uart_wake_host = TEGRA_GPIO_PA0;
-		tegra_uart_platform[UART_IPC_SUNFIRE].uart_wake_request = TEGRA_GPIO_PF1;
-		tegra_uart_platform[UART_IPC_SUNFIRE].peer_register = mot_mdm_ctrl_peer_register;
-	}
+	tegra_uart_platform[UART_IPC_OLYMPUS].uart_ipc = 1;
+	tegra_uart_platform[UART_IPC_OLYMPUS].uart_wake_host = TEGRA_GPIO_PA0;
+	tegra_uart_platform[UART_IPC_OLYMPUS].uart_wake_request = TEGRA_GPIO_PF1;
+	tegra_uart_platform[UART_IPC_OLYMPUS].peer_register = mot_mdm_ctrl_peer_register;
 
 	if( (bi_powerup_reason() & PWRUP_FACTORY_CABLE) &&
 	    (bi_powerup_reason() != PWRUP_INVALID) ){
@@ -729,25 +486,18 @@ static void __init tegra_mot_init(void)
 		i2c_register_board_info(0, tegra_i2c_bus0_board_info, 
 								ARRAY_SIZE(tegra_i2c_bus0_board_info));
 	}
-	if (machine_is_etna() || machine_is_tegra_daytona() || machine_is_sunfire()) {
-		printk("bus 2: %d devices\n", ARRAY_SIZE(tegra_i2c_bus2_board_info));
-		i2c_register_board_info(2, tegra_i2c_bus2_board_info,
-								ARRAY_SIZE(tegra_i2c_bus2_board_info));
-	}
 	printk("bus 3: %d devices\n", ARRAY_SIZE(tegra_i2c_bus3_board_info));
 	i2c_register_board_info(3, tegra_i2c_bus3_board_info, 
 							ARRAY_SIZE(tegra_i2c_bus3_board_info));
 
-	if (machine_is_olympus()){
-		/* console UART can be routed to 'headset jack by setting HSJ mux to 0*/
-		short hsj_mux_gpio=1;
+	/* console UART can be routed to 'headset jack by setting HSJ mux to 0*/
+	short hsj_mux_gpio=1;
 
-		if ( HWREV_TYPE_IS_DEBUG(system_rev) || ENABLE_JACK_UART ){
-			printk("%s: Enabling console on headset jack\n", __FUNCTION__);
-			hsj_mux_gpio=0;
-		}
-		mot_set_hsj_mux( hsj_mux_gpio );
+	if ( HWREV_TYPE_IS_DEBUG(system_rev) || ENABLE_JACK_UART ){
+		printk("%s: Enabling console on headset jack\n", __FUNCTION__);
+		hsj_mux_gpio=0;
 	}
+	mot_set_hsj_mux( hsj_mux_gpio );
 
 	pm_power_off = mot_system_power_off;
 	tegra_setup_bluesleep();
@@ -761,7 +511,7 @@ static void __init tegra_mot_init(void)
 	gpio_direction_output(TEGRA_GPIO_PD4, 0);
 	gpio_export(TEGRA_GPIO_PD4, false);
 
-	if (machine_is_olympus() && (HWREV_TYPE_IS_PORTABLE(system_rev) || HWREV_TYPE_IS_FINAL(system_rev)))
+	if ((HWREV_TYPE_IS_PORTABLE(system_rev) || HWREV_TYPE_IS_FINAL(system_rev)))
 	{
 		if (HWREV_REV(system_rev) >= HWREV_REV_1 && HWREV_REV(system_rev) < HWREV_REV_2)
 		{
@@ -780,26 +530,6 @@ static void __init tegra_mot_init(void)
 		}
 	}
 
-	if (machine_is_etna())
-	{
-		if (HWREV_TYPE_IS_PORTABLE(system_rev) && (HWREV_REV(system_rev) >= HWREV_REV_2) && (HWREV_REV(system_rev) < HWREV_REV_2C))
-		{
-			config_unused_pins(etna_unused_pins_p2a, ARRAY_SIZE(etna_unused_pins_p2a));
-		}
-		else if ((HWREV_TYPE_IS_PORTABLE(system_rev) && HWREV_REV(system_rev) >= HWREV_REV_2C) ||
-			(HWREV_TYPE_IS_MORTABLE(system_rev) && HWREV_REV(system_rev) >= HWREV_REV_3) ||
- 			HWREV_TYPE_IS_FINAL(system_rev))
-		{
-			config_unused_pins(etna_unused_pins_p2c, ARRAY_SIZE(etna_unused_pins_p2c));
-		}
-	}
-
-	if (machine_is_tegra_daytona())
-		config_unused_pins(daytona_unused_pins_p1, ARRAY_SIZE(daytona_unused_pins_p1));
-
-	if (machine_is_etna() || machine_is_tegra_daytona() || machine_is_sunfire())
-		// UTS tool support
-		mot_keymap_update_init();
 }
 
 static void __init mot_fixup(struct machine_desc *desc, struct tag *tags,
@@ -857,38 +587,6 @@ static void __init mot_fixup(struct machine_desc *desc, struct tag *tags,
 }
 
 MACHINE_START(OLYMPUS, "Olympus")
-
-    .boot_params  = 0x00000100,
-    .fixup        = mot_fixup,
-    .map_io       = tegra_map_common_io,
-    .init_irq     = tegra_init_irq,
-    .init_machine = tegra_mot_init,
-    .timer        = &tegra_timer,
-
-MACHINE_END
-
-MACHINE_START(ETNA, "Etna")
-
-    .boot_params  = 0x00000100,
-    .fixup        = mot_fixup,
-    .map_io       = tegra_map_common_io,
-    .init_irq     = tegra_init_irq,
-    .init_machine = tegra_mot_init,
-    .timer        = &tegra_timer,
-
-MACHINE_END
-
-MACHINE_START(SUNFIRE, "Sunfire")
-
-    .boot_params  = 0x00000100,
-    .fixup        = mot_fixup,
-    .map_io       = tegra_map_common_io,
-    .init_irq     = tegra_init_irq,
-    .init_machine = tegra_mot_init,
-    .timer        = &tegra_timer,
-
-MACHINE_END
-MACHINE_START(TEGRA_DAYTONA, "Daytona")
 
     .boot_params  = 0x00000100,
     .fixup        = mot_fixup,

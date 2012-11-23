@@ -15,18 +15,6 @@ ifeq ($(CONFIG_TEGRA_ODM_WHISTLER),y)
   is_tpk_touch := y
 endif
 
-ifeq ($(CONFIG_TEGRA_ODM_ETNA),y)
-  is_tpk_touch := y
-endif
-
-ifeq ($(CONFIG_TEGRA_ODM_SUNFIRE),y)
-  is_tpk_touch := y
-endif
-
-ifeq ($(CONFIG_TEGRA_ODM_DAYTONA),y)
-  is_tpk_touch := y
-endif
-
 ifeq ($(CONFIG_TEGRA_ODM_OLYMPUS),y)
   is_tpk_touch := y
 endif

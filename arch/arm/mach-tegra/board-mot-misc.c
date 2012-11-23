@@ -207,13 +207,6 @@ void mot_tcmd_init(void)
       = -1;
 	mot_tcmd_platform_data.size = TCMD_GPIO_INT_MAX_NUM;
 
-	if (machine_is_etna()) {
-		if (system_rev == 0x1100) {
-			mot_tcmd_platform_data.gpio_list[TCMD_GPIO_KXTF9_INT]
-				= TEGRA_GPIO_PN4;
-      }
-    }
-
 	platform_device_register(&mot_tcmd_platform_device);
 }
 

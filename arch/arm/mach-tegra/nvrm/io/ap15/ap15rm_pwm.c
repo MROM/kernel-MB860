@@ -295,9 +295,6 @@ NvRmPwmOpen(
         ((pCap->MajorVersion == 1) && (pCap->MinorVersion > 0)))
             s_IsFreqDividerSupported = NV_TRUE;
 
-    if(machine_is_tegra_daytona())
-       s_IsFreqDividerSupported = NV_TRUE;
-
     s_hPwm->RefCount++;
 exit:
     *phPwm = s_hPwm;
@@ -480,14 +477,7 @@ NvError NvRmPwmConfig(
                 if ((*pCurrentFreqHzOrPeriod%RequestedFreqHzOrPeriod)*2>RequestedFreqHzOrPeriod)
                     divider +=1;
                 *pCurrentFreqHzOrPeriod = *pCurrentFreqHzOrPeriod / divider;
-                if (machine_is_tegra_daytona())
-                {
-                    RegValue |= PWM_SETNUM(CSR_0, PFM_0, divider-1);
-                }
-                else
-                {
-                    RegValue |= PWM_SETNUM(CSR_0, PFM_0, divider);
-                }
+                RegValue |= PWM_SETNUM(CSR_0, PFM_0, divider);
             }
         }
 

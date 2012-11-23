@@ -44,21 +44,19 @@ static int disp_backlight_init(void)
             __func__, ret);
         return ret;
     }
-	if (machine_is_olympus()) {
-		if ((ret = gpio_request(TEGRA_KEY_BACKLIGHT_EN_GPIO,
-				"key_backlight_en"))) {
-			pr_err("%s: gpio_request(%d, key_backlight_en) failed: %d\n",
-				__func__, TEGRA_KEY_BACKLIGHT_EN_GPIO, ret);
-			return ret;
-		} else {
-			pr_info("%s: gpio_request(%d, key_backlight_en) success!\n",
-				__func__, TEGRA_KEY_BACKLIGHT_EN_GPIO);
-		}
-		if ((ret = gpio_direction_output(TEGRA_KEY_BACKLIGHT_EN_GPIO, 1))) {
-			pr_err("%s: gpio_direction_output(key_backlight_en) failed: %d\n",
-				__func__, ret);
-			return ret;
-		}
+	if ((ret = gpio_request(TEGRA_KEY_BACKLIGHT_EN_GPIO,
+			"key_backlight_en"))) {
+		pr_err("%s: gpio_request(%d, key_backlight_en) failed: %d\n",
+			__func__, TEGRA_KEY_BACKLIGHT_EN_GPIO, ret);
+		return ret;
+	} else {
+		pr_info("%s: gpio_request(%d, key_backlight_en) success!\n",
+			__func__, TEGRA_KEY_BACKLIGHT_EN_GPIO);
+	}
+	if ((ret = gpio_direction_output(TEGRA_KEY_BACKLIGHT_EN_GPIO, 1))) {
+		pr_err("%s: gpio_direction_output(key_backlight_en) failed: %d\n",
+			__func__, ret);
+		return ret;
 	}
 
     return 0;
@@ -110,34 +108,9 @@ void mot_setup_lights(struct i2c_board_info *info)
 	unsigned int disp_type = 0;
 	int ret;
 
-    if (machine_is_etna()) {
-        if ( HWREV_TYPE_IS_BRASSBOARD(system_rev) && HWREV_REV(system_rev) == HWREV_REV_1) { // S1 board
-            strncpy (info->type, LM3530_NAME,
-                sizeof (info->type));
-            info->addr = LM3530_I2C_ADDR;
-            info->platform_data = &lm3530_pdata;
-            pr_info("\n%s: Etna S1; changing display backlight to LM3530\n",
-                __func__);
-        } else {
-            pr_info("\n%s: Etna S2+; removing LM3532 button backlight\n",
-                __func__);
-            lm3532_pdata.flags = 0;
-        }
-    } 
-	else if (machine_is_tegra_daytona()) {
-            pr_info("\n%s: Daytona; removing LM3532 button backlight\n",
-                __func__);
-            lm3532_pdata.flags = 0;
-	} else if (machine_is_sunfire()) {
-		pr_info("\n%s: Sunfire; removing LM3532 button backlight\n",
-		__func__);
-		lm3532_pdata.flags = LM3532_HAS_WEBTOP;
-	}
-	else {
 #ifdef CONFIG_LEDS_DISP_BTN_TIED
-		lm3532_pdata.flags |= LM3532_DISP_BTN_TIED;
+	lm3532_pdata.flags |= LM3532_DISP_BTN_TIED;
 #endif
-	}
 	if ((ret = MotorolaBootDispArgGet(&disp_type))) {
 		pr_err("\n%s: unable to read display type: %d\n", __func__, ret);
 		return;

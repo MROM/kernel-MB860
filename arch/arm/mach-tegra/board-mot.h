@@ -9,9 +9,6 @@
 extern struct kxtf9_platform_data kxtf9_data;
 extern struct akm8975_platform_data akm8975_data;
 extern struct isl29030_platform_data isl29030_als_ir_data_Olympus;
-extern struct isl29030_platform_data isl29030_als_ir_data_Etna;
-extern struct isl29030_platform_data isl29030_als_ir_data_Daytona;
-extern struct isl29030_platform_data isl29030_als_ir_data_Sunfire;
 extern struct lm3532_platform_data lm3532_pdata;
 extern struct qtouch_ts_platform_data ts_platform_olympus_m_1;
 extern struct cpcap_platform_data tegra_cpcap_data;
@@ -74,7 +71,4 @@ extern void cpcap_set_dock_switch(int state);
 #endif
 
 #define UART_IPC_OLYMPUS	3
-#define UART_IPC_ETNA		3
-#define UART_IPC_SUNFIRE		3
-#define UART_IPC_DAYTONA		3
 #endif
